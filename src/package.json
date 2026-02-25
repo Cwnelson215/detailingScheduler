@@ -1,17 +1,48 @@
 {
   "name": "detailing",
   "version": "1.0.0",
-  "description": "detailing",
-  "main": "dist/index.js",
+  "description": "Car detailing scheduling site",
   "scripts": {
-    "dev": "npx tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.app.json",
-    "start": "node dist/index.js"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "npx tsx db/seed.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "drizzle-orm": "^0.35.0",
+    "pg": "^8.13.0",
+    "next-auth": "^4.24.0",
+    "bcryptjs": "^2.4.3",
+    "zod": "^3.23.0",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.5.0",
+    "lucide-react": "^0.460.0",
+    "@radix-ui/react-dialog": "^1.1.0",
+    "@radix-ui/react-label": "^2.1.0",
+    "@radix-ui/react-select": "^2.1.0",
+    "@radix-ui/react-separator": "^1.1.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "@radix-ui/react-tabs": "^1.1.0",
+    "date-fns": "^4.1.0",
+    "react-day-picker": "^9.4.0"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.0.0"
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/pg": "^8.11.0",
+    "@types/bcryptjs": "^2.4.0",
+    "typescript": "^5.0.0",
+    "drizzle-kit": "^0.28.0",
+    "tsx": "^4.0.0"
   }
 }
