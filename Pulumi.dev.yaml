@@ -1,0 +1,10 @@
+config:
+  aws:region: us-east-1
+  detailing:appName: detailing
+  detailing:subdomain: detailing
+  detailing:platformStack: cwnelson/portfolio-platform/dev
+  detailing:cpu: "256"
+  detailing:memory: "512"
+  detailing:desiredCount: "1"
+  detailing:containerPort: "3000"
+  detailing:useFargateSpot: "true"
