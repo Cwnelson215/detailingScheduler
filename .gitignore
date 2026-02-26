@@ -4,3 +4,4 @@ dist/
 *.js.map
 .env
 .env.local
+pglite-data/

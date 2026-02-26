@@ -4,6 +4,10 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  experimental: {
+    instrumentationHook: true,
+    serverComponentsExternalPackages: ["@electric-sql/pglite"],
+  },
 };
 
 module.exports = nextConfig;
