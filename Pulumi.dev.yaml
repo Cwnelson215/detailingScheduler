@@ -8,3 +8,7 @@ config:
   detailing:desiredCount: "1"
   detailing:containerPort: "3000"
   detailing:useFargateSpot: "true"
+  detailing:enableScheduledScaling: "true"
+  detailing:scaleUpHour: "6"
+  detailing:scaleDownHour: "22"
+  detailing:scheduleTimezone: America/Denver
