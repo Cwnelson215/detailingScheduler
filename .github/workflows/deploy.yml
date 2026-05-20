@@ -1,108 +1,87 @@
-name: Deploy
+name: Deploy to k3s
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy'
-        required: true
-        default: 'dev'
-        type: choice
-        options:
-          - dev
-          - prod
 
 env:
-  AWS_REGION: us-east-1
+  IMAGE: ghcr.io/cwnelson215/detailing
 
 jobs:
-  build-and-deploy:
-    name: Build and Deploy
+  deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          node-version: '20'
-          cache: 'npm'
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Build and push image
+        uses: docker/build-push-action@v6
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Get app name from Pulumi config
-        id: app-info
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-        run: |
-          APP_NAME=$(pulumi config get appName --stack ${{ github.event.inputs.environment || 'dev' }})
-          echo "app-name=$APP_NAME" >> $GITHUB_OUTPUT
-
-      - name: Get ECR Repository URL
-        id: ecr-url
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-        run: |
-          STACK="${{ steps.app-info.outputs.app-name }}-${{ github.event.inputs.environment || 'dev' }}"
-          ECR_URL=$(pulumi stack output ecrRepositoryUrl --stack "$STACK" 2>/dev/null || echo "")
-          if [ -z "$ECR_URL" ]; then
-            echo "ECR repository not found. Running pulumi up first..."
-            pulumi up --yes --stack "$STACK"
-            ECR_URL=$(pulumi stack output ecrRepositoryUrl --stack "$STACK")
-          fi
-          echo "ecr-url=$ECR_URL" >> $GITHUB_OUTPUT
-
-      - name: Build and Push Docker Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: portfolio/${{ steps.app-info.outputs.app-name }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
-      - name: Deploy Infrastructure
-        uses: pulumi/actions@v5
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
         with:
-          command: up
-          stack-name: ${{ steps.app-info.outputs.app-name }}-${{ github.event.inputs.environment || 'dev' }}
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          version: 'v1.34.0'
 
-      - name: Force ECS Service Update
-        env:
-          ENVIRONMENT: ${{ github.event.inputs.environment || 'dev' }}
-          APP_NAME: ${{ steps.app-info.outputs.app-name }}
-        run: |
-          aws ecs update-service \
-            --cluster portfolio-${ENVIRONMENT}-cluster \
-            --service ${APP_NAME} \
-            --force-new-deployment
+      - name: Set up kustomize
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: '5.4.3'
 
-      - name: Output App URL
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+      - name: Connect to tailnet
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+
+      - name: Configure kubectl
         run: |
-          STACK="${{ steps.app-info.outputs.app-name }}-${{ github.event.inputs.environment || 'dev' }}"
-          APP_URL=$(pulumi stack output appUrl --stack "$STACK")
-          echo "### Deployment Complete! :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**App URL:** $APP_URL" >> $GITHUB_STEP_SUMMARY
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Apply app-secrets
+        env:
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: |
+          kubectl create secret generic app-secrets \
+            --namespace detailing \
+            --from-literal=NEXTAUTH_SECRET="$NEXTAUTH_SECRET" \
+            --from-literal=NEXTAUTH_URL="$NEXTAUTH_URL" \
+            --from-literal=RESEND_API_KEY="$RESEND_API_KEY" \
+            --from-literal=EMAIL_FROM="$EMAIL_FROM" \
+            --dry-run=client -o yaml \
+            | kubectl apply -f -
+
+      - name: Set image tag in overlay
+        working-directory: k8s/overlays/prod
+        run: kustomize edit set image "$IMAGE=$IMAGE:$GITHUB_SHA"
+
+      - name: Apply manifests
+        run: kubectl apply -k k8s/overlays/prod
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/detailing -n detailing --timeout=3m

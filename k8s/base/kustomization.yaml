@@ -3,6 +3,9 @@ kind: Kustomization
 
 resources:
   - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - certificate.yaml
 
 labels:
   - includeSelectors: false

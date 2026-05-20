@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: detailing
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: detailing.cwnel.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: detailing
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - detailing.cwnel.com
+      secretName: detailing-tls
