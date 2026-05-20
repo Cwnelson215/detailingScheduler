@@ -1,15 +1,14 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
+import { getNextAuthSecret } from "@/lib/env";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const secret = getNextAuthSecret();
 
   // Only protect /admin routes (except login)
   if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
-    const token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET || "dev-secret-change-in-production",
-    });
+    const token = await getToken({ req: request, secret });
 
     if (!token) {
       const loginUrl = new URL("/admin/login", request.url);
@@ -24,10 +23,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/schedule") && request.method !== "GET" ||
     pathname.startsWith("/api/bookings") && (request.method === "PATCH" || request.method === "DELETE")
   ) {
-    const token = await getToken({
-      req: request,
-      secret: process.env.NEXTAUTH_SECRET || "dev-secret-change-in-production",
-    });
+    const token = await getToken({ req: request, secret });
 
     if (!token) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

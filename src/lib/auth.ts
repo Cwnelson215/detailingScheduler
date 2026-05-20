@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/db";
 import { adminSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getNextAuthSecret } from "./env";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -36,5 +37,5 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: "/admin/login",
   },
-  secret: process.env.NEXTAUTH_SECRET || "dev-secret-change-in-production",
+  secret: getNextAuthSecret(),
 };

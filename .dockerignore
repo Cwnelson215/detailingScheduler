@@ -1,0 +1,14 @@
+.git
+.github
+.vscode
+.idea
+.env*
+src/.env*
+node_modules
+src/node_modules
+.next
+src/.next
+coverage
+*.md
+*.pem
+*.key

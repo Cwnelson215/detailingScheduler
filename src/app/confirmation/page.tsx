@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle } from "lucide-react";
 import { formatCurrency, formatDuration } from "@/lib/utils";
+import { getBusinessInfo } from "@/lib/business-info";
 
 export const dynamic = "force-dynamic";
 
@@ -47,13 +48,14 @@ export default async function ConfirmationPage({
 
   if (result.length === 0) redirect("/");
   const booking = result[0];
+  const info = await getBusinessInfo();
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b bg-white">
         <div className="container flex h-16 items-center">
           <Link href="/" className="text-xl font-bold text-primary">
-            Premium Auto Detailing
+            {info.name}
           </Link>
         </div>
       </header>

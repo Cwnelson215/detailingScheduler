@@ -1,10 +1,14 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { getBusinessInfo } from "@/lib/business-info";
 
-export const metadata: Metadata = {
-  title: "Premium Auto Detailing",
-  description: "Professional car detailing services — book your appointment online",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const info = await getBusinessInfo();
+  return {
+    title: info.name,
+    description: `Professional car detailing services from ${info.name} — book your appointment online.`,
+  };
+}
 
 export default function RootLayout({
   children,

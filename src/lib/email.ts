@@ -1,0 +1,106 @@
+import { Resend } from "resend";
+import { formatCurrency, formatDuration } from "./utils";
+import { getBusinessInfo } from "./business-info";
+
+type BookingEmailInput = {
+  bookingId: number;
+  serviceName: string;
+  priceCents: number;
+  durationMins: number;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  vehicleYear: string;
+  vehicleMake: string;
+  vehicleModel: string;
+  appointmentDate: string;
+  appointmentTime: string;
+};
+
+function formatTime(time: string): string {
+  const [h, m] = time.split(":");
+  const hour = parseInt(h);
+  const ampm = hour >= 12 ? "PM" : "AM";
+  const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+  return `${display}:${m} ${ampm}`;
+}
+
+function formatDate(date: string): string {
+  return new Date(date + "T00:00:00").toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function renderHtml(b: BookingEmailInput): string {
+  const rows: [string, string][] = [
+    ["Booking #", String(b.bookingId)],
+    ["Service", b.serviceName],
+    ["Price", formatCurrency(b.priceCents)],
+    ["Date", formatDate(b.appointmentDate)],
+    ["Time", formatTime(b.appointmentTime)],
+    ["Duration", formatDuration(b.durationMins)],
+    ["Vehicle", `${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`],
+  ];
+  const tableRows = rows
+    .map(
+      ([k, v]) =>
+        `<tr><td style="padding:6px 12px;color:#666;">${k}</td><td style="padding:6px 12px;font-weight:600;">${v}</td></tr>`,
+    )
+    .join("");
+  return `<!doctype html>
+<html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
+  <h1 style="font-size:22px;margin-bottom:4px;">Booking Confirmed</h1>
+  <p style="color:#555;margin-top:0;">Thanks ${b.customerName} — your appointment is on the books.</p>
+  <table style="border-collapse:collapse;width:100%;border:1px solid #eee;border-radius:6px;overflow:hidden;margin-top:16px;">
+    ${tableRows}
+  </table>
+  <p style="color:#555;margin-top:24px;">We'll reach out at ${b.customerPhone} if anything changes. Reply to this email with questions.</p>
+</body></html>`;
+}
+
+function renderText(b: BookingEmailInput): string {
+  return [
+    `Booking Confirmed`,
+    ``,
+    `Thanks ${b.customerName} — your appointment is on the books.`,
+    ``,
+    `Booking #: ${b.bookingId}`,
+    `Service:   ${b.serviceName}`,
+    `Price:     ${formatCurrency(b.priceCents)}`,
+    `Date:      ${formatDate(b.appointmentDate)}`,
+    `Time:      ${formatTime(b.appointmentTime)}`,
+    `Duration:  ${formatDuration(b.durationMins)}`,
+    `Vehicle:   ${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`,
+    ``,
+    `We'll reach out at ${b.customerPhone} if anything changes.`,
+  ].join("\n");
+}
+
+export async function sendBookingConfirmation(input: BookingEmailInput): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.log(
+      `[email] RESEND_API_KEY not set — skipping confirmation email for booking #${input.bookingId} to ${input.customerEmail}`,
+    );
+    return;
+  }
+
+  const { name: businessName } = await getBusinessInfo();
+  const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
+  const resend = new Resend(apiKey);
+
+  const { error } = await resend.emails.send({
+    from,
+    to: input.customerEmail,
+    subject: `${businessName} — booking confirmed for ${formatDate(input.appointmentDate)} at ${formatTime(input.appointmentTime)}`,
+    html: renderHtml(input),
+    text: renderText(input),
+  });
+
+  if (error) {
+    throw new Error(`Resend send failed: ${error.message}`);
+  }
+}

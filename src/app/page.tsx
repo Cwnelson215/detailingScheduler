@@ -4,6 +4,7 @@ import { services, businessHours } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { ServiceCard } from "@/components/service-card";
 import { Clock, MapPin, Phone } from "lucide-react";
+import { getBusinessInfo } from "@/lib/business-info";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -29,12 +30,14 @@ export default async function HomePage() {
     .from(businessHours)
     .orderBy(asc(businessHours.dayOfWeek));
 
+  const info = await getBusinessInfo();
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* Header */}
       <header className="border-b bg-white">
         <div className="container flex h-16 items-center justify-between">
-          <h1 className="text-xl font-bold text-primary">Premium Auto Detailing</h1>
+          <h1 className="text-xl font-bold text-primary">{info.name}</h1>
           <Link
             href="/booking"
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
@@ -108,11 +111,11 @@ export default async function HomePage() {
               <div className="space-y-3 text-sm">
                 <div className="flex items-start gap-2">
                   <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground" />
-                  <span>123 Detail Lane, Suite 100<br />Your City, ST 12345</span>
+                  <span className="whitespace-pre-line">{info.address}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>(555) 123-4567</span>
+                  <span>{info.phone}</span>
                 </div>
               </div>
             </div>
@@ -123,7 +126,7 @@ export default async function HomePage() {
       {/* Footer */}
       <footer className="border-t py-6 mt-auto">
         <div className="container text-center text-sm text-muted-foreground">
-          &copy; {new Date().getFullYear()} Premium Auto Detailing. All rights reserved.
+          &copy; {new Date().getFullYear()} {info.name}. All rights reserved.
         </div>
       </footer>
     </div>

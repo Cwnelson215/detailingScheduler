@@ -22,6 +22,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <NavLink href="/admin/schedule" icon={<Calendar className="h-4 w-4" />}>
             Schedule
           </NavLink>
+          <NavLink href="/admin/settings" icon={<Settings className="h-4 w-4" />}>
+            Settings
+          </NavLink>
         </nav>
         <Link
           href="/"

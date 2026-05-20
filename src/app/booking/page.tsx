@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { services } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { BookingForm } from "@/components/booking-form";
+import { getBusinessInfo } from "@/lib/business-info";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,14 @@ export default async function BookingPage() {
     .where(eq(services.isActive, true))
     .orderBy(asc(services.sortOrder));
 
+  const info = await getBusinessInfo();
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b bg-white">
         <div className="container flex h-16 items-center justify-between">
           <Link href="/" className="text-xl font-bold text-primary">
-            Premium Auto Detailing
+            {info.name}
           </Link>
         </div>
       </header>

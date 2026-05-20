@@ -84,10 +84,10 @@ export async function runMigrations() {
     .from(schema.adminSettings)
     .where(sql`key = 'admin_password_hash'`);
   if (existingPassword.length === 0) {
-    // bcrypt hash of "admin123" — change via admin UI after first login
+    // bcrypt hash of "admin123" — change via /admin/settings after first login
     await db.insert(schema.adminSettings).values({
       key: "admin_password_hash",
-      value: "$2a$10$rQEY0tLxjmMqTjG1Rq0OOeG0MEK/L0Kj1YMhWp6jGQF6R0DX0V0K6",
+      value: "$2a$10$whapSoS2nQ.27Xyt/FA36ut6VbIf2O1bBpb3F8ckEK7PhSE5.fP3S",
     });
     console.log("Seeded default admin password (admin123)");
   }
