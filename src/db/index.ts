@@ -12,6 +12,10 @@ if (process.env.DB_HOST) {
     database: process.env.DB_NAME || "detailing",
     user: process.env.DB_USER || "detailing",
     password: process.env.DB_PASSWORD || "detailing",
+    ssl:
+      process.env.DB_SSL_REJECT_UNAUTHORIZED === "false"
+        ? { rejectUnauthorized: false }
+        : true,
   });
   db = drizzle(pool, { schema });
 } else {
