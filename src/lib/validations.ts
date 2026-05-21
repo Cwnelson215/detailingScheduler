@@ -13,6 +13,12 @@ export const bookingSchema = z.object({
   notes: z.string().max(1000).optional().default(""),
 });
 
+export const contactSchema = z.object({
+  name: z.string().min(1, "Name is required").max(255),
+  email: z.string().email("Invalid email address"),
+  message: z.string().min(1, "Message is required").max(2000),
+});
+
 export const serviceSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   description: z.string().max(2000).default(""),
@@ -46,5 +52,6 @@ export const changePasswordSchema = z
   });
 
 export type BookingInput = z.infer<typeof bookingSchema>;
+export type ContactInput = z.infer<typeof contactSchema>;
 export type ServiceInput = z.infer<typeof serviceSchema>;
 export type BusinessInfoInput = z.infer<typeof businessInfoSchema>;

@@ -2,9 +2,10 @@ import Link from "next/link";
 import { db } from "@/db";
 import { services, businessHours } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { Check, MapPin, Phone } from "lucide-react";
+import { Check } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
 import { getBusinessInfo } from "@/lib/business-info";
+import { ContactForm } from "@/components/contact-form";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -294,16 +295,10 @@ export default async function HomePage() {
 
           <div>
             <h3 className="mb-4 text-base font-semibold text-foreground">Contact</h3>
-            <div className="space-y-3 text-sm text-muted-foreground">
-              <div className="flex items-start gap-2">
-                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                <span className="whitespace-pre-line">{info.address}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Phone className="h-4 w-4 shrink-0 text-primary" />
-                <span className="font-medium text-foreground">{info.phone}</span>
-              </div>
-            </div>
+            <p className="mb-4 max-w-xs text-sm text-muted-foreground">
+              Have a question? Send us a message and we&apos;ll get back to you.
+            </p>
+            <ContactForm />
           </div>
         </div>
         <div className="border-t border-border py-6 text-center text-xs text-muted-foreground">

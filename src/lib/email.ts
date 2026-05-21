@@ -2,6 +2,12 @@ import { Resend } from "resend";
 import { formatCurrency, formatDuration } from "./utils";
 import { getBusinessInfo } from "./business-info";
 
+type ContactMessageInput = {
+  name: string;
+  email: string;
+  message: string;
+};
+
 type BookingEmailInput = {
   bookingId: number;
   serviceName: string;
@@ -21,6 +27,15 @@ function getResend(): Resend | null {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return null;
   return new Resend(apiKey);
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function formatTime(time: string): string {
@@ -149,6 +164,64 @@ export async function sendBookingConfirmation(input: BookingEmailInput): Promise
 
   if (error) {
     throw new Error(`Resend send failed: ${error.message}`);
+  }
+}
+
+function renderContactHtml(c: ContactMessageInput): string {
+  return `<!doctype html>
+<html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
+  <h1 style="font-size:22px;margin-bottom:4px;">New Message</h1>
+  <p style="color:#555;margin-top:0;">Someone reached out from your website. Reply to this email to respond to ${escapeHtml(c.name)} directly.</p>
+  ${tableHtml([
+    ["Name", escapeHtml(c.name)],
+    ["Email", escapeHtml(c.email)],
+  ])}
+  <p style="color:#555;margin-top:24px;white-space:pre-line;">${escapeHtml(c.message)}</p>
+</body></html>`;
+}
+
+function renderContactText(c: ContactMessageInput): string {
+  return [
+    `New Message`,
+    ``,
+    `Name:  ${c.name}`,
+    `Email: ${c.email}`,
+    ``,
+    c.message,
+  ].join("\n");
+}
+
+export async function sendContactMessage(input: ContactMessageInput): Promise<void> {
+  const notifyTo = process.env.BOOKING_NOTIFY_EMAIL;
+  if (!notifyTo) {
+    console.log(
+      `[email] BOOKING_NOTIFY_EMAIL not set — skipping contact message from ${input.email}`,
+    );
+    return;
+  }
+
+  const resend = getResend();
+  if (!resend) {
+    console.log(
+      `[email] RESEND_API_KEY not set — skipping contact message from ${input.email}`,
+    );
+    return;
+  }
+
+  const { name: businessName } = await getBusinessInfo();
+  const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
+
+  const { error } = await resend.emails.send({
+    from,
+    to: notifyTo,
+    replyTo: input.email,
+    subject: `${businessName} — new message from ${input.name}`,
+    html: renderContactHtml(input),
+    text: renderContactText(input),
+  });
+
+  if (error) {
+    throw new Error(`Resend contact message failed: ${error.message}`);
   }
 }
 
