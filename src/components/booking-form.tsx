@@ -130,11 +130,14 @@ export function BookingForm({ services }: { services: Service[] }) {
               {i + 1}
             </div>
             <span className="text-sm hidden sm:inline">{s}</span>
-            {i < steps.length - 1 && <div className="w-8 h-px bg-border" />}
+            {i < steps.length - 1 && (
+              <div className={`w-8 h-px ${i < step ? "bg-primary" : "bg-border"}`} />
+            )}
           </div>
         ))}
       </div>
 
+      <div className="rounded-2xl border border-border bg-white p-6 shadow-sm sm:p-8">
       {/* Step 0: Select Service */}
       {step === 0 && (
         <div className="space-y-4">
@@ -327,7 +330,7 @@ export function BookingForm({ services }: { services: Service[] }) {
       )}
 
       {/* Navigation */}
-      <div className="flex justify-between mt-8">
+      <div className="mt-8 flex justify-between border-t border-border pt-6">
         <Button
           variant="outline"
           onClick={() => setStep(step - 1)}
@@ -347,6 +350,7 @@ export function BookingForm({ services }: { services: Service[] }) {
             Confirm Booking
           </Button>
         )}
+      </div>
       </div>
     </div>
   );

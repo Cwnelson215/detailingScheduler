@@ -2,9 +2,8 @@ import Link from "next/link";
 import { db } from "@/db";
 import { services, businessHours } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { ServiceCategoryCard, type ServiceCategory } from "@/components/service-category-card";
-import { FeaturedServiceCard } from "@/components/featured-service-card";
-import { Clock, MapPin, Phone } from "lucide-react";
+import { Check, MapPin, Phone } from "lucide-react";
+import { formatDuration } from "@/lib/utils";
 import { getBusinessInfo } from "@/lib/business-info";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -17,33 +16,28 @@ function formatTime(time: string): string {
   return `${display}:${m} ${ampm}`;
 }
 
+function dollars(cents: number): string {
+  return "$" + (cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
 export const dynamic = "force-dynamic";
 
-type ServiceRow = {
-  id: number;
-  name: string;
-  description: string;
-  durationMins: number;
-  priceCents: number;
-};
+const includedSteps = [
+  {
+    title: "Exterior hand wash & clay-bar",
+    body: "Decontamination that strips embedded grime for a smooth, clean surface before wax.",
+  },
+  {
+    title: "Hand-applied wax",
+    body: "Deep, lasting gloss and real paint protection — applied by hand, not machine.",
+  },
+  {
+    title: "Interior deep clean",
+    body: "Vacuum, shampoo, leather/vinyl conditioning, and crystal-clear glass throughout.",
+  },
+];
 
-function groupServices(rows: ServiceRow[]): ServiceCategory[] {
-  const groups = new Map<string, ServiceCategory>();
-  for (const s of rows) {
-    const [cat, label] = s.name.split(" – ");
-    const key = label ? cat : s.name;
-    if (!groups.has(key)) {
-      groups.set(key, { category: key, description: s.description, variants: [] });
-    }
-    groups.get(key)!.variants.push({
-      id: s.id,
-      label: label ?? null,
-      durationMins: s.durationMins,
-      priceCents: s.priceCents,
-    });
-  }
-  return [...groups.values()];
-}
+const tierPerks = ["Exterior hand wash & wax", "Full interior deep clean", "Glass, trim & conditioning"];
 
 export default async function HomePage() {
   const activeServices = await db
@@ -59,17 +53,44 @@ export default async function HomePage() {
 
   const info = await getBusinessInfo();
 
-  const serviceGroups = groupServices(activeServices);
+  const tiers = activeServices.map((s) => {
+    const [cat, label] = s.name.split(" – ");
+    return {
+      id: s.id,
+      category: cat,
+      name: label ?? cat,
+      priceCents: s.priceCents,
+      durationMins: s.durationMins,
+      description: s.description,
+    };
+  });
+
+  const categoryName = tiers[0]?.category ?? "Our Service";
+  const serviceDescription = tiers[0]?.description ?? "";
+  const startingPrice = tiers.length ? Math.min(...tiers.map((t) => t.priceCents)) : 0;
+  const initial = (info.name.trim()[0] ?? "N").toUpperCase();
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex min-h-screen flex-col">
       {/* Header */}
-      <header className="border-b bg-white">
-        <div className="container flex h-16 items-center justify-between">
-          <h1 className="text-xl font-bold text-primary">{info.name}</h1>
+      <header className="sticky top-0 z-30 border-b border-border bg-white/80 backdrop-blur">
+        <div className="container flex h-20 items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground font-display text-sm font-bold text-white">
+              {initial}
+            </span>
+            <span className="font-display text-lg font-semibold tracking-tight text-foreground">
+              {info.name}
+            </span>
+          </Link>
+          <nav className="hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex">
+            <a href="#services" className="transition-colors hover:text-foreground">Services</a>
+            <a href="#included" className="transition-colors hover:text-foreground">What&apos;s included</a>
+            <a href="#contact" className="transition-colors hover:text-foreground">Contact</a>
+          </nav>
           <Link
             href="/booking"
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Book Now
           </Link>
@@ -77,92 +98,211 @@ export default async function HomePage() {
       </header>
 
       {/* Hero */}
-      <section className="bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5 py-20">
-        <div className="container text-center">
-          <h2 className="text-4xl font-bold tracking-tight sm:text-5xl">
-            Your Car Deserves the Best
-          </h2>
-          <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
-            Professional detailing services that bring out the true beauty of your vehicle.
-            Book your appointment online in minutes.
-          </p>
-          <Link
-            href="/booking"
-            className="mt-8 inline-flex items-center rounded-md bg-primary px-6 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            Schedule Your Detail
-          </Link>
+      <section className="container pt-16 pb-16 lg:pt-20">
+        <div className="grid items-center gap-14 lg:grid-cols-2">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground ring-1 ring-primary/10">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              Now booking online
+            </span>
+            <h1 className="mt-6 text-5xl font-bold leading-[1.05] text-foreground md:text-6xl">
+              Your car deserves the best.
+            </h1>
+            <p className="mt-6 max-w-md text-lg leading-relaxed text-muted-foreground">
+              Professional detailing services that bring out the true beauty of your vehicle.
+              Book your appointment online in minutes.
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3">
+              <Link
+                href="/booking"
+                className="rounded-lg bg-primary px-7 py-3.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Book your detail
+              </Link>
+              <a
+                href="#services"
+                className="rounded-lg border border-border px-7 py-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
+              >
+                View pricing
+              </a>
+            </div>
+            <dl className="mt-10 flex items-center gap-8 text-sm">
+              <div>
+                <dt className="sr-only">Finish</dt>
+                <dd className="font-display text-2xl font-bold text-foreground">100%</dd>
+                <dd className="text-muted-foreground">Hand-finished</dd>
+              </div>
+              <div>
+                <dt className="sr-only">Vehicle sizes</dt>
+                <dd className="font-display text-2xl font-bold text-foreground">{tiers.length || 3}</dd>
+                <dd className="text-muted-foreground">Vehicle sizes</dd>
+              </div>
+            </dl>
+          </div>
+
+          {/* Photo-free hero panel */}
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary to-blue-500 p-10 text-white shadow-xl shadow-primary/20">
+            <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10" />
+            <div className="pointer-events-none absolute -bottom-20 -left-10 h-56 w-56 rounded-full bg-white/10" />
+            <div className="relative">
+              <p className="text-sm font-medium uppercase tracking-wide text-blue-100">{categoryName}</p>
+              <p className="mt-1 text-blue-100/90">Inside &amp; out, in a single visit.</p>
+              <div className="mt-8 flex items-end gap-2">
+                <span className="pb-2 text-sm text-blue-100">from</span>
+                <span className="font-display text-6xl font-bold leading-none">{dollars(startingPrice || 18000)}</span>
+              </div>
+              <ul className="mt-8 space-y-3 text-sm">
+                {tierPerks.map((perk) => (
+                  <li key={perk} className="flex items-center gap-3">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20">
+                      <Check className="h-3 w-3" />
+                    </span>
+                    {perk}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/booking"
+                className="mt-9 inline-flex w-full items-center justify-center rounded-lg bg-white px-6 py-3.5 text-sm font-semibold text-primary transition-colors hover:bg-blue-50"
+              >
+                Book now
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Services */}
-      {serviceGroups.length > 0 && (
-        <section className="py-16">
-          <div className="container">
-            <h3 className="text-2xl font-bold text-center mb-8">
-              {serviceGroups.length === 1 ? "Our Service" : "Our Services"}
-            </h3>
-            {serviceGroups.length === 1 ? (
-              <div className="max-w-2xl mx-auto">
-                <FeaturedServiceCard category={serviceGroups[0]} />
+      {/* Trust strip */}
+      <section className="border-y border-border bg-secondary/60">
+        <div className="container grid grid-cols-2 gap-4 py-7 text-center text-sm font-medium text-muted-foreground md:grid-cols-4">
+          <div>Clay-bar decontamination</div>
+          <div>Hand-applied wax</div>
+          <div>Interior deep clean</div>
+          <div>Leather conditioning</div>
+        </div>
+      </section>
+
+      {/* Services / pricing */}
+      {tiers.length > 0 && (
+        <section id="services" className="container py-24">
+          <div className="mx-auto mb-14 max-w-xl text-center">
+            <p className="text-sm font-semibold uppercase tracking-wide text-primary">{categoryName}</p>
+            <h2 className="mt-3 text-4xl font-bold text-foreground">One service. Priced by vehicle size.</h2>
+            <p className="mt-4 text-muted-foreground">{serviceDescription}</p>
+          </div>
+          <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-3">
+            {tiers.map((tier) => (
+              <div
+                key={tier.id}
+                className="rounded-2xl border border-border p-8 transition hover:-translate-y-1 hover:shadow-lg hover:shadow-slate-200/60"
+              >
+                <h3 className="text-xl font-semibold text-foreground">{tier.name}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">≈ {formatDuration(tier.durationMins)}</p>
+                <div className="mt-5 font-display text-4xl font-bold text-foreground">{dollars(tier.priceCents)}</div>
+                <Link
+                  href="/booking"
+                  className="mt-7 block rounded-lg border border-border py-3 text-center text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
+                >
+                  Book {tier.name}
+                </Link>
               </div>
-            ) : (
-              <div className="grid gap-6 sm:grid-cols-2 max-w-4xl mx-auto">
-                {serviceGroups.map((g) => (
-                  <ServiceCategoryCard key={g.category} category={g} />
-                ))}
-              </div>
-            )}
+            ))}
+          </div>
+          <div className="mx-auto mt-12 max-w-md">
+            <p className="text-center text-sm font-semibold text-foreground">Every detail includes</p>
+            <ul className="mx-auto mt-4 w-fit space-y-2 text-sm text-muted-foreground">
+              {tierPerks.map((perk) => (
+                <li key={perk} className="flex items-center gap-2">
+                  <Check className="h-4 w-4 shrink-0 text-primary" />
+                  {perk}
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
       )}
 
-      {/* Hours & Info */}
-      <section className="bg-muted py-16">
-        <div className="container">
-          <div className="grid gap-8 md:grid-cols-2 max-w-4xl mx-auto">
-            {/* Business Hours */}
-            <div className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="flex items-center gap-2 text-lg font-semibold mb-4">
-                <Clock className="h-5 w-5 text-primary" />
-                Business Hours
-              </h3>
-              <div className="space-y-2">
-                {hours.map((h) => (
-                  <div key={h.dayOfWeek} className="flex justify-between text-sm">
-                    <span className="font-medium">{dayNames[h.dayOfWeek]}</span>
-                    <span className="text-muted-foreground">
-                      {h.isOpen ? `${formatTime(h.openTime!)} – ${formatTime(h.closeTime!)}` : "Closed"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Contact */}
-            <div className="rounded-lg bg-white p-6 shadow-sm">
-              <h3 className="flex items-center gap-2 text-lg font-semibold mb-4">
-                <Phone className="h-5 w-5 text-primary" />
-                Contact
-              </h3>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-start gap-2">
-                  <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground" />
-                  <span className="whitespace-pre-line">{info.address}</span>
+      {/* What's included */}
+      <section id="included" className="border-y border-border bg-secondary/60">
+        <div className="container py-24">
+          <div className="mx-auto mb-12 max-w-xl text-center">
+            <p className="text-sm font-semibold uppercase tracking-wide text-primary">What&apos;s included</p>
+            <h2 className="mt-3 text-4xl font-bold text-foreground">Every detail, by hand.</h2>
+          </div>
+          <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-3">
+            {includedSteps.map((step, i) => (
+              <div key={step.title} className="rounded-2xl border border-border bg-white p-8">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent font-display text-lg font-bold text-accent-foreground">
+                  {i + 1}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>{info.phone}</span>
-                </div>
+                <h3 className="mt-5 text-lg font-semibold text-foreground">{step.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
               </div>
-            </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t py-6 mt-auto">
-        <div className="container text-center text-sm text-muted-foreground">
+      {/* CTA band */}
+      <section className="container py-20">
+        <div className="rounded-3xl bg-foreground px-8 py-14 text-center md:px-14">
+          <h2 className="text-4xl font-bold text-white">Ready to book?</h2>
+          <p className="mx-auto mt-4 max-w-md text-slate-300">
+            Pick your vehicle size and a time that works — confirmation lands in your inbox in minutes.
+          </p>
+          <Link
+            href="/booking"
+            className="mt-8 inline-flex rounded-lg bg-white px-8 py-4 text-sm font-semibold text-foreground transition-colors hover:bg-slate-100"
+          >
+            Book your detail now
+          </Link>
+        </div>
+      </section>
+
+      {/* Footer with hours + contact */}
+      <footer id="contact" className="mt-auto border-t border-border">
+        <div className="container grid gap-10 py-16 md:grid-cols-3">
+          <div>
+            <Link href="/" className="mb-4 flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground font-display text-sm font-bold text-white">
+                {initial}
+              </span>
+              <span className="font-display text-lg font-semibold tracking-tight text-foreground">{info.name}</span>
+            </Link>
+            <p className="max-w-xs text-sm text-muted-foreground">
+              Professional auto detailing that brings out the true beauty of your vehicle.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-4 text-base font-semibold text-foreground">Hours</h3>
+            <dl className="space-y-2 text-sm">
+              {hours.map((h) => (
+                <div key={h.dayOfWeek} className="flex max-w-[240px] justify-between">
+                  <dt className="text-muted-foreground">{dayNames[h.dayOfWeek]}</dt>
+                  <dd className="font-medium text-foreground">
+                    {h.isOpen ? `${formatTime(h.openTime!)} – ${formatTime(h.closeTime!)}` : "Closed"}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          <div>
+            <h3 className="mb-4 text-base font-semibold text-foreground">Contact</h3>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <span className="whitespace-pre-line">{info.address}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Phone className="h-4 w-4 shrink-0 text-primary" />
+                <span className="font-medium text-foreground">{info.phone}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="border-t border-border py-6 text-center text-xs text-muted-foreground">
           &copy; {new Date().getFullYear()} {info.name}. All rights reserved.
         </div>
       </footer>
