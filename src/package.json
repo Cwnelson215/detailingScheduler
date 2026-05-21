@@ -8,7 +8,8 @@
     "start": "next start",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "npx tsx db/seed.ts"
+    "db:seed": "npx tsx db/seed.ts",
+    "db:cleanup-services": "npx tsx db/deactivate-legacy-services.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.0",

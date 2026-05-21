@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { services, businessHours } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { ServiceCategoryCard, type ServiceCategory } from "@/components/service-category-card";
+import { FeaturedServiceCard } from "@/components/featured-service-card";
 import { Clock, MapPin, Phone } from "lucide-react";
 import { getBusinessInfo } from "@/lib/business-info";
 
@@ -58,6 +59,8 @@ export default async function HomePage() {
 
   const info = await getBusinessInfo();
 
+  const serviceGroups = groupServices(activeServices);
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* Header */}
@@ -93,15 +96,23 @@ export default async function HomePage() {
       </section>
 
       {/* Services */}
-      {activeServices.length > 0 && (
+      {serviceGroups.length > 0 && (
         <section className="py-16">
           <div className="container">
-            <h3 className="text-2xl font-bold text-center mb-8">Our Services</h3>
-            <div className="grid gap-6 sm:grid-cols-2 max-w-4xl mx-auto">
-              {groupServices(activeServices).map((g) => (
-                <ServiceCategoryCard key={g.category} category={g} />
-              ))}
-            </div>
+            <h3 className="text-2xl font-bold text-center mb-8">
+              {serviceGroups.length === 1 ? "Our Service" : "Our Services"}
+            </h3>
+            {serviceGroups.length === 1 ? (
+              <div className="max-w-2xl mx-auto">
+                <FeaturedServiceCard category={serviceGroups[0]} />
+              </div>
+            ) : (
+              <div className="grid gap-6 sm:grid-cols-2 max-w-4xl mx-auto">
+                {serviceGroups.map((g) => (
+                  <ServiceCategoryCard key={g.category} category={g} />
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
