@@ -62,6 +62,23 @@ export async function runMigrations() {
     )
   `);
 
+  // Additive columns / indexes for existing deployments (idempotent).
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS confirmation_token VARCHAR(64)`);
+  await db.execute(
+    sql`UPDATE bookings SET confirmation_token = gen_random_uuid()::text WHERE confirmation_token IS NULL`,
+  );
+  await db.execute(sql`ALTER TABLE bookings ALTER COLUMN confirmation_token SET NOT NULL`);
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP`);
+
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS bookings_appointment_date_idx ON bookings (appointment_date)`,
+  );
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS bookings_status_idx ON bookings (status)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS bookings_service_id_idx ON bookings (service_id)`);
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS bookings_confirmation_token_idx ON bookings (confirmation_token)`,
+  );
+
   // Seed default business hours if empty
   const existingHours = await db.select().from(schema.businessHours);
   if (existingHours.length === 0) {

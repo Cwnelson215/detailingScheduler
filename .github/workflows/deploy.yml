@@ -68,6 +68,8 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_REPLY_TO: ${{ secrets.EMAIL_REPLY_TO }}
           BOOKING_NOTIFY_EMAIL: ${{ secrets.BOOKING_NOTIFY_EMAIL }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           kubectl create secret generic app-secrets \
             --namespace detailing \
@@ -77,6 +79,8 @@ jobs:
             --from-literal=EMAIL_FROM="$EMAIL_FROM" \
             --from-literal=EMAIL_REPLY_TO="$EMAIL_REPLY_TO" \
             --from-literal=BOOKING_NOTIFY_EMAIL="$BOOKING_NOTIFY_EMAIL" \
+            --from-literal=SITE_URL="$SITE_URL" \
+            --from-literal=CRON_SECRET="$CRON_SECRET" \
             --dry-run=client -o yaml \
             | kubectl apply -f -
 

@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: detailing-reminders
+spec:
+  # 14:00 UTC daily (~9–10am US Eastern). Adjust to taste.
+  schedule: "0 14 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: trigger
+              image: curlimages/curl:8.11.1
+              env:
+                - name: CRON_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secrets
+                      key: CRON_SECRET
+              command:
+                - sh
+                - -c
+                - >
+                  curl -fsS -X POST
+                  -H "Authorization: Bearer ${CRON_SECRET}"
+                  http://detailing/api/cron/reminders

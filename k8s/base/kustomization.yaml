@@ -6,6 +6,7 @@ resources:
   - service.yaml
   - ingress.yaml
   - certificate.yaml
+  - reminder-cronjob.yaml
 
 labels:
   - includeSelectors: false

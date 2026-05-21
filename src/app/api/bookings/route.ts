@@ -1,14 +1,22 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
+import { getServerSession } from "next-auth";
 import { db } from "@/db";
 import { bookings, services } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
+import { authOptions } from "@/lib/auth";
 import { bookingSchema } from "@/lib/validations";
-import { getAvailableSlots } from "@/lib/availability";
+import { isSlotAvailable } from "@/lib/availability";
 import { sendBookingConfirmation, sendOwnerNotification } from "@/lib/email";
+import { getClientIp, rateLimit } from "@/lib/rate-limit";
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const result = await db
     .select({
       id: bookings.id,
@@ -34,6 +42,10 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  if (!rateLimit(`bookings:${getClientIp(request)}`, 10, 10 * 60 * 1000)) {
+    return Response.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+  }
+
   const body = await request.json();
   const parsed = bookingSchema.safeParse(body);
 
@@ -41,14 +53,25 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  // Verify slot is still available
-  const slots = await getAvailableSlots(parsed.data.appointmentDate, parsed.data.serviceId);
-  const slot = slots.find((s) => s.time === parsed.data.appointmentTime);
-  if (!slot || !slot.available) {
+  // Re-verify availability and insert atomically. A per-day advisory lock serializes
+  // concurrent booking attempts for the same date so two requests can't both pass the
+  // check-then-insert window and double-book a slot.
+  const booking = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${parsed.data.appointmentDate}))`);
+    const available = await isSlotAvailable(
+      tx,
+      parsed.data.appointmentDate,
+      parsed.data.appointmentTime,
+      parsed.data.serviceId,
+    );
+    if (!available) return null;
+    const [row] = await tx.insert(bookings).values(parsed.data).returning();
+    return row;
+  });
+
+  if (!booking) {
     return Response.json({ error: "This time slot is no longer available" }, { status: 409 });
   }
-
-  const [booking] = await db.insert(bookings).values(parsed.data).returning();
 
   const [service] = await db
     .select({ name: services.name, priceCents: services.priceCents, durationMins: services.durationMins })
@@ -56,6 +79,7 @@ export async function POST(request: NextRequest) {
     .where(eq(services.id, booking.serviceId));
 
   if (service) {
+    const baseUrl = process.env.SITE_URL || "https://detailing.cwnel.com";
     const emailInput = {
       bookingId: booking.id,
       serviceName: service.name,
@@ -72,7 +96,10 @@ export async function POST(request: NextRequest) {
     };
 
     const results = await Promise.allSettled([
-      sendBookingConfirmation(emailInput),
+      sendBookingConfirmation({
+        ...emailInput,
+        manageUrl: `${baseUrl}/manage?token=${booking.confirmationToken}`,
+      }),
       sendOwnerNotification(emailInput),
     ]);
     for (const r of results) {

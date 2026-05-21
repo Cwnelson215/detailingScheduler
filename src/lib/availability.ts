@@ -1,21 +1,72 @@
 import { db } from "@/db";
 import { businessHours, blockedDates, bookings, services } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
+import { timeToMinutes, minutesToTime, rangesOverlap } from "./time";
 
 export interface TimeSlot {
   time: string; // "HH:MM" format
   available: boolean;
 }
 
-function timeToMinutes(time: string): number {
-  const [h, m] = time.split(":").map(Number);
-  return h * 60 + m;
-}
+// Authoritative single-slot check used when actually writing a booking (create or
+// admin reschedule). Accepts an executor so it can run inside the booking transaction.
+// Enforces blocked dates, business hours, the end-of-day boundary, and duration-aware
+// overlap with other active bookings. `excludeBookingId` lets a reschedule ignore the
+// row it is moving.
+export async function isSlotAvailable(
+  executor: Pick<typeof db, "select">,
+  dateStr: string,
+  appointmentTime: string,
+  serviceId: number,
+  excludeBookingId?: number,
+): Promise<boolean> {
+  const dayOfWeek = new Date(dateStr + "T00:00:00").getDay();
 
-function minutesToTime(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+  const blocked = await executor
+    .select()
+    .from(blockedDates)
+    .where(eq(blockedDates.date, dateStr));
+  if (blocked.length > 0) return false;
+
+  const hours = await executor
+    .select()
+    .from(businessHours)
+    .where(eq(businessHours.dayOfWeek, dayOfWeek));
+  if (hours.length === 0 || !hours[0].isOpen || !hours[0].openTime || !hours[0].closeTime) {
+    return false;
+  }
+
+  const service = await executor.select().from(services).where(eq(services.id, serviceId));
+  if (service.length === 0) return false;
+  const duration = service[0].durationMins;
+
+  const start = timeToMinutes(appointmentTime);
+  const end = start + duration;
+  if (start < timeToMinutes(hours[0].openTime) || end > timeToMinutes(hours[0].closeTime)) {
+    return false;
+  }
+
+  const conditions = [
+    eq(bookings.appointmentDate, dateStr),
+    sql`${bookings.status} != 'cancelled'`,
+  ];
+  if (excludeBookingId !== undefined) {
+    conditions.push(sql`${bookings.id} != ${excludeBookingId}`);
+  }
+
+  const existing = await executor
+    .select({
+      appointmentTime: bookings.appointmentTime,
+      durationMins: services.durationMins,
+    })
+    .from(bookings)
+    .innerJoin(services, eq(bookings.serviceId, services.id))
+    .where(and(...conditions));
+
+  return !existing.some((b) => {
+    const bStart = timeToMinutes(b.appointmentTime);
+    return rangesOverlap(start, end, bStart, bStart + b.durationMins);
+  });
 }
 
 export async function getAvailableSlots(
@@ -77,8 +128,7 @@ export async function getAvailableSlots(
     // Check overlap with existing bookings
     const hasConflict = existingBookings.some((b) => {
       const bStart = timeToMinutes(b.appointmentTime);
-      const bEnd = bStart + b.durationMins;
-      return slotStart < bEnd && slotEnd > bStart;
+      return rangesOverlap(slotStart, slotEnd, bStart, bStart + b.durationMins);
     });
 
     slots.push({

@@ -21,6 +21,7 @@ type BookingEmailInput = {
   vehicleModel: string;
   appointmentDate: string;
   appointmentTime: string;
+  manageUrl?: string;
 };
 
 function getResend(): Resend | null {
@@ -85,6 +86,7 @@ function renderHtml(b: BookingEmailInput): string {
   <h1 style="font-size:22px;margin-bottom:4px;">Booking Confirmed</h1>
   <p style="color:#555;margin-top:0;">Thanks ${b.customerName} — your appointment is on the books.</p>
   ${tableHtml(bookingRows(b))}
+  ${b.manageUrl ? `<p style="color:#555;margin-top:24px;">Need to cancel? <a href="${b.manageUrl}">Manage your booking</a>.</p>` : ""}
   <p style="color:#555;margin-top:24px;">We'll reach out at ${b.customerPhone} if anything changes. Reply to this email with questions.</p>
 </body></html>`;
 }
@@ -103,6 +105,7 @@ function renderText(b: BookingEmailInput): string {
     `Duration:  ${formatDuration(b.durationMins)}`,
     `Vehicle:   ${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`,
     ``,
+    ...(b.manageUrl ? [`Manage your booking: ${b.manageUrl}`, ``] : []),
     `We'll reach out at ${b.customerPhone} if anything changes.`,
   ].join("\n");
 }
@@ -222,6 +225,81 @@ export async function sendContactMessage(input: ContactMessageInput): Promise<vo
 
   if (error) {
     throw new Error(`Resend contact message failed: ${error.message}`);
+  }
+}
+
+type BookingStatusKind = "confirmed" | "cancelled" | "rescheduled" | "reminder";
+
+const statusCopy: Record<BookingStatusKind, { heading: string; subject: string; intro: string }> = {
+  confirmed: {
+    heading: "Booking Confirmed",
+    subject: "your appointment is confirmed",
+    intro: "your appointment is confirmed. Here are the details:",
+  },
+  cancelled: {
+    heading: "Booking Cancelled",
+    subject: "your appointment was cancelled",
+    intro:
+      "your appointment has been cancelled. If this wasn't expected, just reply to this email and we'll sort it out.",
+  },
+  rescheduled: {
+    heading: "Booking Rescheduled",
+    subject: "your appointment was rescheduled",
+    intro: "your appointment has been moved. Here are the new details:",
+  },
+  reminder: {
+    heading: "Appointment Reminder",
+    subject: "a reminder about your upcoming appointment",
+    intro: "this is a reminder about your upcoming appointment:",
+  },
+};
+
+export async function sendBookingStatusUpdate(
+  input: BookingEmailInput,
+  kind: BookingStatusKind,
+): Promise<void> {
+  const resend = getResend();
+  if (!resend) {
+    console.log(
+      `[email] RESEND_API_KEY not set — skipping ${kind} email for booking #${input.bookingId} to ${input.customerEmail}`,
+    );
+    return;
+  }
+
+  const copy = statusCopy[kind];
+  const { name: businessName } = await getBusinessInfo();
+  const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
+  const replyTo = process.env.EMAIL_REPLY_TO;
+
+  const html = `<!doctype html>
+<html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
+  <h1 style="font-size:22px;margin-bottom:4px;">${copy.heading}</h1>
+  <p style="color:#555;margin-top:0;">Hi ${escapeHtml(input.customerName)} — ${copy.intro}</p>
+  ${tableHtml(bookingRows(input))}
+  <p style="color:#555;margin-top:24px;">Questions? Just reply to this email.</p>
+</body></html>`;
+
+  const text = [
+    copy.heading,
+    ``,
+    `Hi ${input.customerName} — ${copy.intro}`,
+    ``,
+    ...bookingRows(input).map(([k, v]) => `${k}: ${v}`),
+    ``,
+    `Questions? Just reply to this email.`,
+  ].join("\n");
+
+  const { error } = await resend.emails.send({
+    from,
+    to: input.customerEmail,
+    ...(replyTo ? { replyTo } : {}),
+    subject: `${businessName} — ${copy.subject} (${formatDate(input.appointmentDate)} at ${formatTime(input.appointmentTime)})`,
+    html,
+    text,
+  });
+
+  if (error) {
+    throw new Error(`Resend ${kind} email failed: ${error.message}`);
   }
 }
 

@@ -98,7 +98,7 @@ export function BookingForm({ services }: { services: Service[] }) {
       }
 
       const booking = await res.json();
-      router.push(`/confirmation?id=${booking.id}`);
+      router.push(`/confirmation?token=${booking.confirmationToken}`);
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {

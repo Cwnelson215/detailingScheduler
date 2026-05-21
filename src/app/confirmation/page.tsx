@@ -22,9 +22,9 @@ function formatTime(time: string): string {
 export default async function ConfirmationPage({
   searchParams,
 }: {
-  searchParams: { id?: string };
+  searchParams: { token?: string };
 }) {
-  if (!searchParams.id) redirect("/");
+  if (!searchParams.token) redirect("/");
 
   const result = await db
     .select({
@@ -44,7 +44,7 @@ export default async function ConfirmationPage({
     })
     .from(bookings)
     .innerJoin(services, eq(bookings.serviceId, services.id))
-    .where(eq(bookings.id, parseInt(searchParams.id)));
+    .where(eq(bookings.confirmationToken, searchParams.token));
 
   if (result.length === 0) redirect("/");
   const booking = result[0];
