@@ -1,6 +1,11 @@
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
 
-let db: any;
+// Typed as NodePgDatabase so query results are typed for consumers. At runtime the
+// dev path is actually a PgliteDatabase, but both drivers share the query API we use
+// (select/insert/update/execute). The require()-based loading below returns `any`, so
+// assigning either driver to this binding type-checks.
+let db: NodePgDatabase<typeof schema>;
 
 if (process.env.DB_HOST) {
   // Production: use pg Pool

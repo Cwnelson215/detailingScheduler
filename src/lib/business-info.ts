@@ -22,10 +22,18 @@ const KEYS = {
 } as const;
 
 export const getBusinessInfo = cache(async (): Promise<BusinessInfo> => {
-  const rows: { key: string; value: string }[] = await db
-    .select()
-    .from(adminSettings)
-    .where(inArray(adminSettings.key, [KEYS.name, KEYS.address, KEYS.phone]));
+  let rows: { key: string; value: string }[];
+  try {
+    rows = await db
+      .select()
+      .from(adminSettings)
+      .where(inArray(adminSettings.key, [KEYS.name, KEYS.address, KEYS.phone]));
+  } catch {
+    // The DB is unreachable during `next build` (no DB at image-build time) and could
+    // be transiently down at runtime. Business identity has well-defined defaults, so
+    // degrade gracefully rather than crash the page/metadata render.
+    return DEFAULTS;
+  }
 
   const byKey = new Map<string, string>(rows.map((r) => [r.key, r.value]));
   return {
