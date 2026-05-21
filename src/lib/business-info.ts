@@ -10,7 +10,7 @@ export type BusinessInfo = {
 };
 
 const DEFAULTS: BusinessInfo = {
-  name: "Premium Auto Detailing",
+  name: "Nelson Detailing",
   address: "123 Detail Lane, Suite 100\nYour City, ST 12345",
   phone: "(555) 123-4567",
 };

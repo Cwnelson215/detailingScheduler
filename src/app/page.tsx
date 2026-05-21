@@ -2,7 +2,7 @@ import Link from "next/link";
 import { db } from "@/db";
 import { services, businessHours } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
-import { ServiceCard } from "@/components/service-card";
+import { ServiceCategoryCard, type ServiceCategory } from "@/components/service-category-card";
 import { Clock, MapPin, Phone } from "lucide-react";
 import { getBusinessInfo } from "@/lib/business-info";
 
@@ -17,6 +17,32 @@ function formatTime(time: string): string {
 }
 
 export const dynamic = "force-dynamic";
+
+type ServiceRow = {
+  id: number;
+  name: string;
+  description: string;
+  durationMins: number;
+  priceCents: number;
+};
+
+function groupServices(rows: ServiceRow[]): ServiceCategory[] {
+  const groups = new Map<string, ServiceCategory>();
+  for (const s of rows) {
+    const [cat, label] = s.name.split(" – ");
+    const key = label ? cat : s.name;
+    if (!groups.has(key)) {
+      groups.set(key, { category: key, description: s.description, variants: [] });
+    }
+    groups.get(key)!.variants.push({
+      id: s.id,
+      label: label ?? null,
+      durationMins: s.durationMins,
+      priceCents: s.priceCents,
+    });
+  }
+  return [...groups.values()];
+}
 
 export default async function HomePage() {
   const activeServices = await db
@@ -71,9 +97,9 @@ export default async function HomePage() {
         <section className="py-16">
           <div className="container">
             <h3 className="text-2xl font-bold text-center mb-8">Our Services</h3>
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {activeServices.map((service) => (
-                <ServiceCard key={service.id} service={service} />
+            <div className="grid gap-6 sm:grid-cols-2 max-w-4xl mx-auto">
+              {groupServices(activeServices).map((g) => (
+                <ServiceCategoryCard key={g.category} category={g} />
               ))}
             </div>
           </div>

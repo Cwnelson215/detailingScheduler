@@ -92,5 +92,18 @@ export async function runMigrations() {
     console.log("Seeded default admin password (admin123)");
   }
 
+  // Seed default business name if not set
+  const existingName = await db
+    .select()
+    .from(schema.adminSettings)
+    .where(sql`key = 'business_name'`);
+  if (existingName.length === 0) {
+    await db.insert(schema.adminSettings).values({
+      key: "business_name",
+      value: "Nelson Detailing",
+    });
+    console.log("Seeded business name");
+  }
+
   console.log("Migrations complete");
 }
