@@ -142,6 +142,9 @@ export function BookingForm({ services }: { services: Service[] }) {
       {step === 0 && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Select a Service</h2>
+          {services[0]?.description && (
+            <p className="text-sm text-muted-foreground">{services[0].description}</p>
+          )}
           <div className="grid gap-3">
             {services.map((service) => (
               <Card
@@ -156,7 +159,6 @@ export function BookingForm({ services }: { services: Service[] }) {
                 <CardContent className="p-4 flex items-center justify-between">
                   <div>
                     <p className="font-medium">{service.name}</p>
-                    <p className="text-sm text-muted-foreground">{service.description}</p>
                   </div>
                   <div className="text-right shrink-0 ml-4">
                     <p className="font-semibold">{formatCurrency(service.priceCents)}</p>

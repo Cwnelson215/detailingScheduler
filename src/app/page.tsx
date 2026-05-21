@@ -149,7 +149,7 @@ export default async function HomePage() {
               <p className="mt-1 text-blue-100/90">Inside &amp; out, in a single visit.</p>
               <div className="mt-8 flex items-end gap-2">
                 <span className="pb-2 text-sm text-blue-100">from</span>
-                <span className="font-display text-6xl font-bold leading-none">{dollars(startingPrice || 18000)}</span>
+                <span className="font-display text-6xl font-bold leading-none">{dollars(startingPrice || 15000)}</span>
               </div>
               <ul className="mt-8 space-y-3 text-sm">
                 {tierPerks.map((perk) => (
