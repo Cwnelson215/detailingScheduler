@@ -149,7 +149,7 @@ export default async function HomePage() {
               <p className="mt-1 text-blue-100/90">Inside &amp; out, in a single visit.</p>
               <div className="mt-8 flex items-end gap-2">
                 <span className="pb-2 text-sm text-blue-100">from</span>
-                <span className="font-display text-6xl font-bold leading-none">{dollars(startingPrice || 15000)}</span>
+                <span className="font-display text-6xl font-bold leading-none">{dollars(startingPrice || 15000)}<span className="text-blue-100">*</span></span>
               </div>
               <ul className="mt-8 space-y-3 text-sm">
                 {tierPerks.map((perk) => (
@@ -198,7 +198,7 @@ export default async function HomePage() {
               >
                 <h3 className="text-xl font-semibold text-foreground">{tier.name}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">≈ {formatDuration(tier.durationMins)}</p>
-                <div className="mt-5 font-display text-4xl font-bold text-foreground">{dollars(tier.priceCents)}</div>
+                <div className="mt-5 font-display text-4xl font-bold text-foreground">{dollars(tier.priceCents)}<span className="text-muted-foreground">*</span></div>
                 <Link
                   href="/booking"
                   className="mt-7 block rounded-lg border border-border py-3 text-center text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
@@ -208,6 +208,10 @@ export default async function HomePage() {
               </div>
             ))}
           </div>
+          <p className="mx-auto mt-6 max-w-2xl text-center text-sm text-muted-foreground">
+            * Final pricing may vary depending on the condition of your vehicle.
+            Especially dirty or heavily soiled vehicles may incur an additional charge.
+          </p>
           <div className="mx-auto mt-12 max-w-md">
             <p className="text-center text-sm font-semibold text-foreground">Every detail includes</p>
             <ul className="mx-auto mt-4 w-fit space-y-2 text-sm text-muted-foreground">

@@ -88,7 +88,7 @@ export default async function ConfirmationPage({
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Price</span>
-                <span className="font-medium">{formatCurrency(booking.priceCents)}</span>
+                <span className="font-medium">{formatCurrency(booking.priceCents)}<span className="text-muted-foreground">*</span></span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Date</span>
@@ -122,6 +122,11 @@ export default async function ConfirmationPage({
               </div>
             </CardContent>
           </Card>
+
+          <p className="mx-auto mt-4 max-w-md text-sm text-muted-foreground">
+            * Final pricing may vary depending on the condition of your vehicle.
+            Especially dirty or heavily soiled vehicles may incur an additional charge.
+          </p>
 
           <div className="mt-8 flex gap-4 justify-center">
             <Button asChild variant="outline">

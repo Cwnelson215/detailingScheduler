@@ -161,13 +161,17 @@ export function BookingForm({ services }: { services: Service[] }) {
                     <p className="font-medium">{service.name}</p>
                   </div>
                   <div className="text-right shrink-0 ml-4">
-                    <p className="font-semibold">{formatCurrency(service.priceCents)}</p>
+                    <p className="font-semibold">{formatCurrency(service.priceCents)}<span className="text-muted-foreground">*</span></p>
                     <p className="text-sm text-muted-foreground">{formatDuration(service.durationMins)}</p>
                   </div>
                 </CardContent>
               </Card>
             ))}
           </div>
+          <p className="text-sm text-muted-foreground">
+            * Final pricing may vary depending on the condition of your vehicle.
+            Especially dirty or heavily soiled vehicles may incur an additional charge.
+          </p>
         </div>
       )}
 
@@ -288,7 +292,7 @@ export function BookingForm({ services }: { services: Service[] }) {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Price</span>
-                <span className="font-medium">{formatCurrency(selectedService.priceCents)}</span>
+                <span className="font-medium">{formatCurrency(selectedService.priceCents)}<span className="text-muted-foreground">*</span></span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Date</span>
@@ -327,6 +331,10 @@ export function BookingForm({ services }: { services: Service[] }) {
               )}
             </CardContent>
           </Card>
+          <p className="text-sm text-muted-foreground">
+            * Final pricing may vary depending on the condition of your vehicle.
+            Especially dirty or heavily soiled vehicles may incur an additional charge.
+          </p>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
       )}
