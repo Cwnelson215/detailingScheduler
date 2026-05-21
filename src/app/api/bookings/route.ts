@@ -6,7 +6,7 @@ import { bookings, services } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { bookingSchema } from "@/lib/validations";
 import { getAvailableSlots } from "@/lib/availability";
-import { sendBookingConfirmation } from "@/lib/email";
+import { sendBookingConfirmation, sendOwnerNotification } from "@/lib/email";
 
 export async function GET() {
   const result = await db
@@ -56,23 +56,29 @@ export async function POST(request: NextRequest) {
     .where(eq(services.id, booking.serviceId));
 
   if (service) {
-    try {
-      await sendBookingConfirmation({
-        bookingId: booking.id,
-        serviceName: service.name,
-        priceCents: service.priceCents,
-        durationMins: service.durationMins,
-        customerName: booking.customerName,
-        customerEmail: booking.customerEmail,
-        customerPhone: booking.customerPhone,
-        vehicleYear: booking.vehicleYear,
-        vehicleMake: booking.vehicleMake,
-        vehicleModel: booking.vehicleModel,
-        appointmentDate: booking.appointmentDate,
-        appointmentTime: booking.appointmentTime,
-      });
-    } catch (err) {
-      console.error(`[bookings] failed to send confirmation email for booking #${booking.id}:`, err);
+    const emailInput = {
+      bookingId: booking.id,
+      serviceName: service.name,
+      priceCents: service.priceCents,
+      durationMins: service.durationMins,
+      customerName: booking.customerName,
+      customerEmail: booking.customerEmail,
+      customerPhone: booking.customerPhone,
+      vehicleYear: booking.vehicleYear,
+      vehicleMake: booking.vehicleMake,
+      vehicleModel: booking.vehicleModel,
+      appointmentDate: booking.appointmentDate,
+      appointmentTime: booking.appointmentTime,
+    };
+
+    const results = await Promise.allSettled([
+      sendBookingConfirmation(emailInput),
+      sendOwnerNotification(emailInput),
+    ]);
+    for (const r of results) {
+      if (r.status === "rejected") {
+        console.error(`[bookings] failed to send email for booking #${booking.id}:`, r.reason);
+      }
     }
   }
 

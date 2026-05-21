@@ -66,6 +66,8 @@ jobs:
           NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_REPLY_TO: ${{ secrets.EMAIL_REPLY_TO }}
+          BOOKING_NOTIFY_EMAIL: ${{ secrets.BOOKING_NOTIFY_EMAIL }}
         run: |
           kubectl create secret generic app-secrets \
             --namespace detailing \
@@ -73,6 +75,8 @@ jobs:
             --from-literal=NEXTAUTH_URL="$NEXTAUTH_URL" \
             --from-literal=RESEND_API_KEY="$RESEND_API_KEY" \
             --from-literal=EMAIL_FROM="$EMAIL_FROM" \
+            --from-literal=EMAIL_REPLY_TO="$EMAIL_REPLY_TO" \
+            --from-literal=BOOKING_NOTIFY_EMAIL="$BOOKING_NOTIFY_EMAIL" \
             --dry-run=client -o yaml \
             | kubectl apply -f -
 

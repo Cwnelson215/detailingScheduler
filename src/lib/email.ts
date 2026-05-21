@@ -17,6 +17,12 @@ type BookingEmailInput = {
   appointmentTime: string;
 };
 
+function getResend(): Resend | null {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return null;
+  return new Resend(apiKey);
+}
+
 function formatTime(time: string): string {
   const [h, m] = time.split(":");
   const hour = parseInt(h);
@@ -34,8 +40,20 @@ function formatDate(date: string): string {
   });
 }
 
-function renderHtml(b: BookingEmailInput): string {
-  const rows: [string, string][] = [
+function tableHtml(rows: [string, string][]): string {
+  const tableRows = rows
+    .map(
+      ([k, v]) =>
+        `<tr><td style="padding:6px 12px;color:#666;">${k}</td><td style="padding:6px 12px;font-weight:600;">${v}</td></tr>`,
+    )
+    .join("");
+  return `<table style="border-collapse:collapse;width:100%;border:1px solid #eee;border-radius:6px;overflow:hidden;margin-top:16px;">
+    ${tableRows}
+  </table>`;
+}
+
+function bookingRows(b: BookingEmailInput): [string, string][] {
+  return [
     ["Booking #", String(b.bookingId)],
     ["Service", b.serviceName],
     ["Price", formatCurrency(b.priceCents)],
@@ -44,19 +62,14 @@ function renderHtml(b: BookingEmailInput): string {
     ["Duration", formatDuration(b.durationMins)],
     ["Vehicle", `${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`],
   ];
-  const tableRows = rows
-    .map(
-      ([k, v]) =>
-        `<tr><td style="padding:6px 12px;color:#666;">${k}</td><td style="padding:6px 12px;font-weight:600;">${v}</td></tr>`,
-    )
-    .join("");
+}
+
+function renderHtml(b: BookingEmailInput): string {
   return `<!doctype html>
 <html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
   <h1 style="font-size:22px;margin-bottom:4px;">Booking Confirmed</h1>
   <p style="color:#555;margin-top:0;">Thanks ${b.customerName} — your appointment is on the books.</p>
-  <table style="border-collapse:collapse;width:100%;border:1px solid #eee;border-radius:6px;overflow:hidden;margin-top:16px;">
-    ${tableRows}
-  </table>
+  ${tableHtml(bookingRows(b))}
   <p style="color:#555;margin-top:24px;">We'll reach out at ${b.customerPhone} if anything changes. Reply to this email with questions.</p>
 </body></html>`;
 }
@@ -79,9 +92,42 @@ function renderText(b: BookingEmailInput): string {
   ].join("\n");
 }
 
+function renderOwnerHtml(b: BookingEmailInput): string {
+  const rows: [string, string][] = [
+    ...bookingRows(b),
+    ["Customer", b.customerName],
+    ["Email", b.customerEmail],
+    ["Phone", b.customerPhone],
+  ];
+  return `<!doctype html>
+<html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
+  <h1 style="font-size:22px;margin-bottom:4px;">New Booking</h1>
+  <p style="color:#555;margin-top:0;">A new appointment was just booked. Reply to this email to reach ${b.customerName} directly.</p>
+  ${tableHtml(rows)}
+</body></html>`;
+}
+
+function renderOwnerText(b: BookingEmailInput): string {
+  return [
+    `New Booking`,
+    ``,
+    `Booking #: ${b.bookingId}`,
+    `Service:   ${b.serviceName}`,
+    `Price:     ${formatCurrency(b.priceCents)}`,
+    `Date:      ${formatDate(b.appointmentDate)}`,
+    `Time:      ${formatTime(b.appointmentTime)}`,
+    `Duration:  ${formatDuration(b.durationMins)}`,
+    `Vehicle:   ${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`,
+    ``,
+    `Customer:  ${b.customerName}`,
+    `Email:     ${b.customerEmail}`,
+    `Phone:     ${b.customerPhone}`,
+  ].join("\n");
+}
+
 export async function sendBookingConfirmation(input: BookingEmailInput): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
+  const resend = getResend();
+  if (!resend) {
     console.log(
       `[email] RESEND_API_KEY not set — skipping confirmation email for booking #${input.bookingId} to ${input.customerEmail}`,
     );
@@ -90,11 +136,12 @@ export async function sendBookingConfirmation(input: BookingEmailInput): Promise
 
   const { name: businessName } = await getBusinessInfo();
   const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
-  const resend = new Resend(apiKey);
+  const replyTo = process.env.EMAIL_REPLY_TO;
 
   const { error } = await resend.emails.send({
     from,
     to: input.customerEmail,
+    ...(replyTo ? { replyTo } : {}),
     subject: `${businessName} — booking confirmed for ${formatDate(input.appointmentDate)} at ${formatTime(input.appointmentTime)}`,
     html: renderHtml(input),
     text: renderText(input),
@@ -102,5 +149,39 @@ export async function sendBookingConfirmation(input: BookingEmailInput): Promise
 
   if (error) {
     throw new Error(`Resend send failed: ${error.message}`);
+  }
+}
+
+export async function sendOwnerNotification(input: BookingEmailInput): Promise<void> {
+  const notifyTo = process.env.BOOKING_NOTIFY_EMAIL;
+  if (!notifyTo) {
+    console.log(
+      `[email] BOOKING_NOTIFY_EMAIL not set — skipping owner notification for booking #${input.bookingId}`,
+    );
+    return;
+  }
+
+  const resend = getResend();
+  if (!resend) {
+    console.log(
+      `[email] RESEND_API_KEY not set — skipping owner notification for booking #${input.bookingId}`,
+    );
+    return;
+  }
+
+  const { name: businessName } = await getBusinessInfo();
+  const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
+
+  const { error } = await resend.emails.send({
+    from,
+    to: notifyTo,
+    replyTo: input.customerEmail,
+    subject: `${businessName} — new booking #${input.bookingId} for ${formatDate(input.appointmentDate)} at ${formatTime(input.appointmentTime)}`,
+    html: renderOwnerHtml(input),
+    text: renderOwnerText(input),
+  });
+
+  if (error) {
+    throw new Error(`Resend owner notification failed: ${error.message}`);
   }
 }
