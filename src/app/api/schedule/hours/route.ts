@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { businessHours } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
 import { businessHoursSchema } from "@/lib/validations";
+import { requireAdmin } from "@/lib/require-admin";
 import { z } from "zod";
 
 export async function GET() {
@@ -16,6 +17,9 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   const body = await request.json();
   const schema = z.array(businessHoursSchema);
   const parsed = schema.safeParse(body);

@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { blockedDates } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { requireAdmin } from "@/lib/require-admin";
 import { z } from "zod";
 
 export async function GET() {
@@ -15,6 +16,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   const body = await request.json();
   const schema = z.object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -31,6 +35,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 

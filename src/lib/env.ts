@@ -8,5 +8,10 @@ export function getNextAuthSecret(): string {
   if (process.env.NODE_ENV === "production" && !isBuildPhase) {
     throw new Error("NEXTAUTH_SECRET must be set in production");
   }
+  // Reached only outside real production. Be noisy: a misconfigured NODE_ENV is the
+  // only way this insecure, publicly-known secret could ever sign live sessions.
+  console.warn(
+    "[env] NEXTAUTH_SECRET is unset — using the insecure development fallback secret.",
+  );
   return "dev-secret-change-in-production";
 }

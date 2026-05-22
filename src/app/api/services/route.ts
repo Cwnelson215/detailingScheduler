@@ -3,8 +3,9 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { services } from "@/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { serviceSchema } from "@/lib/validations";
+import { requireAdmin } from "@/lib/require-admin";
 
 export async function GET() {
   const result = await db
@@ -15,6 +16,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   const body = await request.json();
   const parsed = serviceSchema.safeParse(body);
 

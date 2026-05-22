@@ -5,6 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { bookingUpdateSchema } from "@/lib/validations";
 import { isSlotAvailable } from "@/lib/availability";
 import { sendBookingStatusUpdate } from "@/lib/email";
+import { requireAdmin } from "@/lib/require-admin";
 
 type Booking = typeof bookings.$inferSelect;
 type StatusKind = "confirmed" | "cancelled" | "rescheduled";
@@ -49,6 +50,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   const id = parseInt(params.id);
   if (Number.isNaN(id)) {
     return Response.json({ error: "Invalid booking id" }, { status: 400 });
@@ -119,6 +123,9 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   const id = parseInt(params.id);
   if (Number.isNaN(id)) {
     return Response.json({ error: "Invalid booking id" }, { status: 400 });

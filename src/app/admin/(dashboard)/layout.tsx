@@ -1,7 +1,31 @@
 import Link from "next/link";
 import { Calendar, ClipboardList, LayoutDashboard, Settings, Wrench } from "lucide-react";
+import { ChangePasswordForm } from "@/components/admin/change-password-form";
+import { isUsingDefaultAdminPassword } from "@/lib/admin-password";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export const dynamic = "force-dynamic";
+
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  // Block the whole dashboard until the seeded default password is rotated. The
+  // change-password form posts to its own API route (not gated by this layout), and
+  // once the hash differs from the default the gate lifts on the next render.
+  if (await isUsingDefaultAdminPassword()) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted p-6">
+        <div className="w-full max-w-md space-y-4">
+          <div className="space-y-1 text-center">
+            <h1 className="text-xl font-bold">Change your default password</h1>
+            <p className="text-sm text-muted-foreground">
+              This account is still using the default password. Set a new one to
+              access the admin dashboard.
+            </p>
+          </div>
+          <ChangePasswordForm />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex">
       {/* Sidebar */}

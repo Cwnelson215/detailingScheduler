@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { adminSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getNextAuthSecret } from "./env";
+import { clientIpFromHeaders, rateLimit } from "./rate-limit";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -13,8 +14,20 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.password) return null;
+
+        // Throttle by client IP to make the single-password login non-brute-forceable.
+        // Returning null (rather than throwing) keeps the response indistinguishable
+        // from a wrong password, so it leaks no "you hit the limit" oracle.
+        const ip = clientIpFromHeaders((name) => {
+          const v = req?.headers?.[name];
+          return Array.isArray(v) ? v[0] : v;
+        });
+        if (!rateLimit(`login:${ip}`, 5, 15 * 60 * 1000)) {
+          console.warn(`[auth] login rate limit exceeded for ${ip}`);
+          return null;
+        }
 
         const result = await db
           .select()

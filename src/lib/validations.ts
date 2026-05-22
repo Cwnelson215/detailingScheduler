@@ -77,6 +77,21 @@ export const serviceSchema = z.object({
   sortOrder: z.number().int().default(0),
 });
 
+// Partial update for an existing service. Unlike serviceSchema this declares no
+// defaults, so omitted keys stay omitted instead of overwriting columns with default
+// values, and every supplied field is range-checked (e.g. no negative priceCents).
+export const serviceUpdateSchema = z
+  .object({
+    name: z.string().min(1, "Name is required").max(255),
+    description: z.string().max(2000),
+    durationMins: z.number().int().min(15, "Minimum 15 minutes").max(480),
+    priceCents: z.number().int().min(0),
+    isActive: z.boolean(),
+    sortOrder: z.number().int(),
+  })
+  .partial()
+  .refine((d) => Object.keys(d).length > 0, "No valid fields to update");
+
 export const businessHoursSchema = z.object({
   dayOfWeek: z.number().int().min(0).max(6),
   openTime: z.string().nullable(),

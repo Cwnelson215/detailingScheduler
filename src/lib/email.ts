@@ -56,11 +56,13 @@ function formatDate(date: string): string {
   });
 }
 
+// Escapes both cells, so every caller passing user-controlled values (customer name,
+// vehicle, contact fields) is safe from HTML injection without escaping at each call site.
 function tableHtml(rows: [string, string][]): string {
   const tableRows = rows
     .map(
       ([k, v]) =>
-        `<tr><td style="padding:6px 12px;color:#666;">${k}</td><td style="padding:6px 12px;font-weight:600;">${v}</td></tr>`,
+        `<tr><td style="padding:6px 12px;color:#666;">${escapeHtml(k)}</td><td style="padding:6px 12px;font-weight:600;">${escapeHtml(v)}</td></tr>`,
     )
     .join("");
   return `<table style="border-collapse:collapse;width:100%;border:1px solid #eee;border-radius:6px;overflow:hidden;margin-top:16px;">
@@ -84,10 +86,10 @@ function renderHtml(b: BookingEmailInput): string {
   return `<!doctype html>
 <html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
   <h1 style="font-size:22px;margin-bottom:4px;">Booking Confirmed</h1>
-  <p style="color:#555;margin-top:0;">Thanks ${b.customerName} — your appointment is on the books.</p>
+  <p style="color:#555;margin-top:0;">Thanks ${escapeHtml(b.customerName)} — your appointment is on the books.</p>
   ${tableHtml(bookingRows(b))}
   ${b.manageUrl ? `<p style="color:#555;margin-top:24px;">Need to cancel? <a href="${b.manageUrl}">Manage your booking</a>.</p>` : ""}
-  <p style="color:#555;margin-top:24px;">We'll reach out at ${b.customerPhone} if anything changes. Reply to this email with questions.</p>
+  <p style="color:#555;margin-top:24px;">We'll reach out at ${escapeHtml(b.customerPhone)} if anything changes. Reply to this email with questions.</p>
 </body></html>`;
 }
 
@@ -120,7 +122,7 @@ function renderOwnerHtml(b: BookingEmailInput): string {
   return `<!doctype html>
 <html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
   <h1 style="font-size:22px;margin-bottom:4px;">New Booking</h1>
-  <p style="color:#555;margin-top:0;">A new appointment was just booked. Reply to this email to reach ${b.customerName} directly.</p>
+  <p style="color:#555;margin-top:0;">A new appointment was just booked. Reply to this email to reach ${escapeHtml(b.customerName)} directly.</p>
   ${tableHtml(rows)}
 </body></html>`;
 }
@@ -176,8 +178,8 @@ function renderContactHtml(c: ContactMessageInput): string {
   <h1 style="font-size:22px;margin-bottom:4px;">New Message</h1>
   <p style="color:#555;margin-top:0;">Someone reached out from your website. Reply to this email to respond to ${escapeHtml(c.name)} directly.</p>
   ${tableHtml([
-    ["Name", escapeHtml(c.name)],
-    ["Email", escapeHtml(c.email)],
+    ["Name", c.name],
+    ["Email", c.email],
   ])}
   <p style="color:#555;margin-top:24px;white-space:pre-line;">${escapeHtml(c.message)}</p>
 </body></html>`;

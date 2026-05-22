@@ -32,7 +32,13 @@ function LoginForm() {
       return;
     }
 
-    const callbackUrl = searchParams.get("callbackUrl") || "/admin";
+    // Only honor same-site relative callbacks ("/admin/..."); reject absolute or
+    // protocol-relative ("//evil.com") URLs so the param can't drive an open redirect.
+    const requested = searchParams.get("callbackUrl");
+    const callbackUrl =
+      requested && requested.startsWith("/") && !requested.startsWith("//")
+        ? requested
+        : "/admin";
     router.push(callbackUrl);
   };
 

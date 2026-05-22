@@ -2,27 +2,26 @@ import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { services } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { serviceUpdateSchema } from "@/lib/validations";
+import { requireAdmin } from "@/lib/require-admin";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   const id = parseInt(params.id);
   const body = await request.json();
-
-  const allowedFields = ["name", "description", "durationMins", "priceCents", "isActive", "sortOrder"];
-  const updates: Record<string, unknown> = {};
-  for (const key of allowedFields) {
-    if (key in body) updates[key] = body[key];
-  }
-
-  if (Object.keys(updates).length === 0) {
-    return Response.json({ error: "No valid fields to update" }, { status: 400 });
+  const parsed = serviceUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
   const [updated] = await db
     .update(services)
-    .set(updates)
+    .set(parsed.data)
     .where(eq(services.id, id))
     .returning();
 
@@ -37,6 +36,9 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
   const id = parseInt(params.id);
   const [deleted] = await db
     .delete(services)

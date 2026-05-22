@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "./index";
 import * as schema from "./schema";
+import { DEFAULT_ADMIN_PASSWORD_HASH } from "../lib/admin-password";
 
 export async function runMigrations() {
   console.log("Running database migrations...");
@@ -101,10 +102,11 @@ export async function runMigrations() {
     .from(schema.adminSettings)
     .where(sql`key = 'admin_password_hash'`);
   if (existingPassword.length === 0) {
-    // bcrypt hash of "admin123" — change via /admin/settings after first login
+    // Default "admin123". The dashboard forces a change before it can be used while
+    // this exact (un-rotated) hash is still in place — see isUsingDefaultAdminPassword.
     await db.insert(schema.adminSettings).values({
       key: "admin_password_hash",
-      value: "$2a$10$whapSoS2nQ.27Xyt/FA36ut6VbIf2O1bBpb3F8ckEK7PhSE5.fP3S",
+      value: DEFAULT_ADMIN_PASSWORD_HASH,
     });
     console.log("Seeded default admin password (admin123)");
   }
