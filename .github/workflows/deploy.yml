@@ -3,13 +3,38 @@ name: Deploy to k3s
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 env:
   IMAGE: ghcr.io/cwnelson215/detailing
 
 jobs:
+  # Gate: build never runs and nothing reaches the cluster unless this passes.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+      - name: Install dependencies
+        working-directory: src
+        run: npm ci
+      - name: Typecheck
+        working-directory: src
+        run: npm run typecheck
+      - name: Run tests
+        working-directory: src
+        run: npm run test
+
   deploy:
+    needs: test
+    # Run on push to main / manual dispatch only — never on pull_request (PRs have no
+    # deploy secrets and must not touch the cluster; the test job still runs on PRs).
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -24,6 +24,10 @@ npm run db:generate      # drizzle-kit: generate migration from schema changes
 npm run db:migrate       # drizzle-kit: apply migrations
 npm run db:seed          # Run migrations + seed default hours, admin password, services
 npm run db:cleanup-services  # Deactivate legacy (non "Full Detail") services
+
+npm run test             # vitest run — full suite (unit + DB-integration + API routes)
+npm run test:watch       # vitest in watch mode
+npm run typecheck        # tsc --noEmit (no separate lint step)
 ```
 
 The repo-root `npm run dev` is just a convenience that does `cd src && npm run dev`.
@@ -101,9 +105,19 @@ Each send **skips gracefully** (logs only, no error) when its env var is unset, 
 
 In production these values come from the k8s `app-secrets` Secret, created by `.github/workflows/deploy.yml` from GitHub repo secrets of the same name. Locally, put them in `src/.env.local`.
 
+## Testing
+
+Vitest (`src/vitest.config.ts`, node env). Tests are co-located with source (`**/*.test.ts`):
+- **Unit:** `lib/time`, `lib/utils`, `lib/rate-limit`, `lib/validations` (Zod schemas), `lib/email` (formatters exercised through the public `send*` functions with `resend` + `getBusinessInfo` mocked).
+- **DB-integration / API routes:** run against an **in-memory PGlite** stood up by `src/test/setup.ts` (a Vitest `setupFiles`), which seeds `globalThis.__pgliteDb` before `@/db` is imported and runs `runMigrations()`. `src/test/fixtures.ts` has `resetDb`/`seedService`/`seedBooking`/`blockDate`/`futureDateForWeekday`. Route tests (`app/api/bookings/**`) call the exported handlers with a `NextRequest` and mock `@/lib/email`, `@/lib/rate-limit`, and `next-auth`'s `getServerSession`.
+
+Run `npm run test` + `npm run typecheck` from `src/` before pushing.
+
 ## Deployment & CI/CD
 
-`.github/workflows/deploy.yml` runs on push to `main` (and manual dispatch):
+`.github/workflows/deploy.yml` runs on push to `main` (and manual dispatch); the `test` job also runs on **pull requests**.
+
+**`test` job (the gate):** `npm ci` → `npm run typecheck` (`tsc --noEmit`) → `npm run test` (Vitest), all in `src/`. The `deploy` job has `needs: test` and `if: github.event_name != 'pull_request'`, so a red build never deploys and PRs run tests without touching the cluster. The `deploy` job then:
 
 1. **Build & push** the image with Buildx to GHCR — `ghcr.io/cwnelson215/detailing:<sha>` and `:latest` (GHA layer cache).
 2. **Connect to the tailnet** via `tailscale/github-action` (`TS_AUTHKEY` secret) and configure `kubectl` from the base64-encoded `KUBECONFIG` secret.
@@ -118,6 +132,7 @@ In production these values come from the k8s `app-secrets` Secret, created by `.
 - `src/app/` — App Router pages + API routes: `api/bookings`, `api/services`, `api/availability`, `api/schedule/*`, `api/admin/*`, `api/auth/[...nextauth]`, `health`, `booking`, `confirmation`, `admin`
 - `src/db/` — `schema.ts`, `index.ts` (connection), `migrate.ts`, `seed.ts`, `deactivate-legacy-services.ts`
 - `src/lib/` — `email.ts`, `auth.ts`, `availability.ts`, `validations.ts`, `business-info.ts`
+- `src/test/` — `setup.ts` (in-memory PGlite Vitest setup) + `fixtures.ts` (DB seed helpers)
 - `src/components/` — booking form, calendar/time-slot pickers, admin components, UI primitives
 - `src/.env.example` — documented environment variables
 - `Dockerfile` — multi-stage `node:20-alpine`, Next.js standalone, non-root, EXPOSE 3000

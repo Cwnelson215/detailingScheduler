@@ -11,7 +11,8 @@
     "db:seed": "npx tsx db/seed.ts",
     "db:cleanup-services": "npx tsx db/deactivate-legacy-services.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.0",

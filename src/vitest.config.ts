@@ -10,5 +10,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["**/*.test.ts"],
+    // Stands up an in-memory PGlite DB + runs migrations before each test file, so any
+    // test (or code under test) that imports `@/db` uses an isolated database.
+    setupFiles: ["./test/setup.ts"],
   },
 });
