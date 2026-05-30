@@ -3,14 +3,14 @@ import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 
 vi.mock("@/lib/email", () => ({
-  sendBookingStatusUpdate: vi.fn().mockResolvedValue(undefined),
+  notifyBookingStatus: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 
 import { PATCH, DELETE } from "@/app/api/bookings/[id]/route";
 import { getServerSession } from "next-auth";
-import { sendBookingStatusUpdate } from "@/lib/email";
+import { notifyBookingStatus } from "@/lib/email";
 import { db } from "@/db";
 import { bookings } from "@/db/schema";
 import { resetDb, seedService, seedBooking, futureDateForWeekday } from "@/test/fixtures";
@@ -64,7 +64,7 @@ describe("PATCH /api/bookings/[id]", () => {
     expect(res.status).toBe(200);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, b.id));
     expect(row.status).toBe("confirmed");
-    expect(sendBookingStatusUpdate).toHaveBeenCalledWith(expect.anything(), "confirmed");
+    expect(notifyBookingStatus).toHaveBeenCalledWith(expect.anything(), "confirmed");
   });
 
   it("reschedules into a free slot (200)", async () => {
@@ -73,7 +73,7 @@ describe("PATCH /api/bookings/[id]", () => {
     expect(res.status).toBe(200);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, b.id));
     expect(row.appointmentTime.slice(0, 5)).toBe("11:00");
-    expect(sendBookingStatusUpdate).toHaveBeenCalledWith(expect.anything(), "rescheduled");
+    expect(notifyBookingStatus).toHaveBeenCalledWith(expect.anything(), "rescheduled");
   });
 
   it("returns 409 when rescheduling onto a taken slot", async () => {
@@ -113,6 +113,6 @@ describe("DELETE /api/bookings/[id]", () => {
     });
     const res = await DELETE(req("DELETE"), ctx(b.id));
     expect(res.status).toBe(200);
-    expect(sendBookingStatusUpdate).not.toHaveBeenCalled();
+    expect(notifyBookingStatus).not.toHaveBeenCalled();
   });
 });

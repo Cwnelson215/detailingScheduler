@@ -9,7 +9,9 @@ import {
   time,
   timestamp,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { generateJobId } from "../lib/job-id";
 
 export const services = pgTable("services", {
   id: serial("id").primaryKey(),
@@ -58,6 +60,10 @@ export const bookings = pgTable(
     confirmationToken: varchar("confirmation_token", { length: 64 })
       .notNull()
       .$defaultFn(() => crypto.randomUUID()),
+    // Short, human-typeable handle a customer enters (with their email) to look up and
+    // manage their booking. Unique, unguessable. Typed nullable so the additive migration's
+    // pre-backfill window type-checks; the DB enforces NOT NULL once existing rows are filled.
+    jobId: varchar("job_id", { length: 16 }).$defaultFn(generateJobId),
     reminderSentAt: timestamp("reminder_sent_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -66,6 +72,27 @@ export const bookings = pgTable(
     statusIdx: index("bookings_status_idx").on(t.status),
     serviceIdIdx: index("bookings_service_id_idx").on(t.serviceId),
     confirmationTokenIdx: index("bookings_confirmation_token_idx").on(t.confirmationToken),
+    jobIdIdx: uniqueIndex("bookings_job_id_idx").on(t.jobId),
+  }),
+);
+
+export const bookingMessages = pgTable(
+  "booking_messages",
+  {
+    id: serial("id").primaryKey(),
+    bookingId: integer("booking_id")
+      .notNull()
+      .references(() => bookings.id),
+    sender: varchar("sender", { length: 10 }).notNull(), // 'customer' | 'owner'
+    // Message body encrypted at rest with AES-256-GCM (see lib/crypto.ts). All base64.
+    ciphertext: text("ciphertext").notNull(),
+    iv: varchar("iv", { length: 32 }).notNull(),
+    authTag: varchar("auth_tag", { length: 32 }).notNull(),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    bookingIdIdx: index("booking_messages_booking_id_idx").on(t.bookingId),
   }),
 );
 

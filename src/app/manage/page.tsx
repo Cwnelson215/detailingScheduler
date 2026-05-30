@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDuration } from "@/lib/utils";
 import { getBusinessInfo } from "@/lib/business-info";
+import { formatJobId } from "@/lib/job-id";
 import { ManageActions } from "@/components/manage-actions";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ export default async function ManageBookingPage({
     ? await db
         .select({
           id: bookings.id,
+          jobId: bookings.jobId,
           serviceName: services.name,
           priceCents: services.priceCents,
           durationMins: services.durationMins,
@@ -87,6 +89,10 @@ export default async function ManageBookingPage({
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Booking #</span>
                     <span className="font-medium">{booking.id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Job ID</span>
+                    <span className="font-medium">{formatJobId(booking.jobId)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Service</span>

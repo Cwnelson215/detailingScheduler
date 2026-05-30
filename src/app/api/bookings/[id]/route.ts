@@ -1,50 +1,13 @@
 import { NextRequest } from "next/server";
 import { db } from "@/db";
-import { bookings, services } from "@/db/schema";
+import { bookings } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { bookingUpdateSchema } from "@/lib/validations";
 import { isSlotAvailable } from "@/lib/availability";
-import { sendBookingStatusUpdate } from "@/lib/email";
+import { notifyBookingStatus } from "@/lib/email";
 import { requireAdmin } from "@/lib/require-admin";
 
 type Booking = typeof bookings.$inferSelect;
-type StatusKind = "confirmed" | "cancelled" | "rescheduled";
-
-// Email the customer about a status change. Best-effort: a mail failure must never
-// fail the admin's request, mirroring the booking-creation flow.
-async function notifyCustomer(booking: Booking, kind: StatusKind): Promise<void> {
-  try {
-    const [service] = await db
-      .select({
-        name: services.name,
-        priceCents: services.priceCents,
-        durationMins: services.durationMins,
-      })
-      .from(services)
-      .where(eq(services.id, booking.serviceId));
-    if (!service) return;
-
-    await sendBookingStatusUpdate(
-      {
-        bookingId: booking.id,
-        serviceName: service.name,
-        priceCents: service.priceCents,
-        durationMins: service.durationMins,
-        customerName: booking.customerName,
-        customerEmail: booking.customerEmail,
-        customerPhone: booking.customerPhone,
-        vehicleYear: booking.vehicleYear,
-        vehicleMake: booking.vehicleMake,
-        vehicleModel: booking.vehicleModel,
-        appointmentDate: booking.appointmentDate,
-        appointmentTime: booking.appointmentTime,
-      },
-      kind,
-    );
-  } catch (err) {
-    console.error(`[bookings] failed to send ${kind} email for booking #${booking.id}:`, err);
-  }
-}
 
 export async function PATCH(
   request: NextRequest,
@@ -110,10 +73,10 @@ export async function PATCH(
 
   // Notify the customer about the meaningful change.
   if (isReschedule) {
-    await notifyCustomer(updated, "rescheduled");
+    await notifyBookingStatus(updated, "rescheduled");
   } else if (updates.status && updates.status !== existing.status) {
-    if (updates.status === "confirmed") await notifyCustomer(updated, "confirmed");
-    else if (updates.status === "cancelled") await notifyCustomer(updated, "cancelled");
+    if (updates.status === "confirmed") await notifyBookingStatus(updated, "confirmed");
+    else if (updates.status === "cancelled") await notifyBookingStatus(updated, "cancelled");
   }
 
   return Response.json(updated);
@@ -145,7 +108,7 @@ export async function DELETE(
     .where(eq(bookings.id, id))
     .returning();
 
-  await notifyCustomer(updated, "cancelled");
+  await notifyBookingStatus(updated, "cancelled");
 
   return Response.json(updated);
 }

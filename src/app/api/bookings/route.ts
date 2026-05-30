@@ -55,19 +55,33 @@ export async function POST(request: NextRequest) {
 
   // Re-verify availability and insert atomically. A per-day advisory lock serializes
   // concurrent booking attempts for the same date so two requests can't both pass the
-  // check-then-insert window and double-book a slot.
-  const booking = await db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${parsed.data.appointmentDate}))`);
-    const available = await isSlotAvailable(
-      tx,
-      parsed.data.appointmentDate,
-      parsed.data.appointmentTime,
-      parsed.data.serviceId,
-    );
-    if (!available) return null;
-    const [row] = await tx.insert(bookings).values(parsed.data).returning();
-    return row;
-  });
+  // check-then-insert window and double-book a slot. `null` => slot taken.
+  // The unique job_id is generated per insert ($defaultFn); on the astronomically rare
+  // collision (23505 on bookings_job_id_idx) we retry, which regenerates it.
+  let booking: typeof bookings.$inferSelect | null = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      booking = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${parsed.data.appointmentDate}))`);
+        const available = await isSlotAvailable(
+          tx,
+          parsed.data.appointmentDate,
+          parsed.data.appointmentTime,
+          parsed.data.serviceId,
+        );
+        if (!available) return null;
+        const [row] = await tx.insert(bookings).values(parsed.data).returning();
+        return row;
+      });
+      break;
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      const message = String((err as { message?: string })?.message ?? "");
+      const isJobIdCollision = code === "23505" && message.includes("job_id");
+      if (isJobIdCollision && attempt < 4) continue;
+      throw err;
+    }
+  }
 
   if (!booking) {
     return Response.json({ error: "This time slot is no longer available" }, { status: 409 });
@@ -82,6 +96,7 @@ export async function POST(request: NextRequest) {
     const baseUrl = process.env.SITE_URL || "https://detailing.cwnel.com";
     const emailInput = {
       bookingId: booking.id,
+      jobId: booking.jobId ?? undefined,
       serviceName: service.name,
       priceCents: service.priceCents,
       durationMins: service.durationMins,

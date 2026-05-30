@@ -95,6 +95,7 @@ jobs:
           BOOKING_NOTIFY_EMAIL: ${{ secrets.BOOKING_NOTIFY_EMAIL }}
           SITE_URL: ${{ secrets.SITE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          MESSAGE_ENCRYPTION_KEY: ${{ secrets.MESSAGE_ENCRYPTION_KEY }}
         run: |
           kubectl create secret generic app-secrets \
             --namespace detailing \
@@ -106,6 +107,7 @@ jobs:
             --from-literal=BOOKING_NOTIFY_EMAIL="$BOOKING_NOTIFY_EMAIL" \
             --from-literal=SITE_URL="$SITE_URL" \
             --from-literal=CRON_SECRET="$CRON_SECRET" \
+            --from-literal=MESSAGE_ENCRYPTION_KEY="$MESSAGE_ENCRYPTION_KEY" \
             --dry-run=client -o yaml \
             | kubectl apply -f -
 

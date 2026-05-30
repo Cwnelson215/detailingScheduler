@@ -3,13 +3,16 @@
 // to the code under test. Call resetDb() in a beforeEach.
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { services, bookings, blockedDates, businessHours } from "@/db/schema";
+import { services, bookings, bookingMessages, blockedDates, businessHours } from "@/db/schema";
+import { encryptMessage } from "@/lib/crypto";
 
 // Wipe per-test data and reset identity sequences (so IDs are predictable per test).
 // business_hours is left intact — runMigrations seeds one row per weekday (Mon–Fri
 // 08:00–17:00, Sat 09:00–14:00, Sun closed); use setHours() to override a day.
 export async function resetDb(): Promise<void> {
-  await db.execute(sql`TRUNCATE bookings, services, blocked_dates RESTART IDENTITY CASCADE`);
+  await db.execute(
+    sql`TRUNCATE booking_messages, bookings, services, blocked_dates RESTART IDENTITY CASCADE`,
+  );
 }
 
 export async function seedService(overrides: Partial<typeof services.$inferInsert> = {}) {
@@ -41,6 +44,19 @@ export async function seedBooking(overrides: BookingOverrides) {
       status: "pending",
       ...overrides,
     })
+    .returning();
+  return row;
+}
+
+export async function seedMessage(
+  bookingId: number,
+  sender: "customer" | "owner",
+  body: string,
+) {
+  const sealed = encryptMessage(body);
+  const [row] = await db
+    .insert(bookingMessages)
+    .values({ bookingId, sender, ciphertext: sealed.ciphertext, iv: sealed.iv, authTag: sealed.authTag })
     .returning();
   return row;
 }

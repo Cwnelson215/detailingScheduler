@@ -62,6 +62,38 @@ export const bookingUpdateSchema = z
   })
   .refine((d) => Object.keys(d).length > 0, "No valid fields to update");
 
+// Customer looks up a booking with the short Job ID + the email on file (two factors).
+export const lookupSchema = z.object({
+  jobId: z.string().min(1, "Job ID is required").max(20),
+  email: z.string().email("Invalid email address"),
+});
+
+// Customer self-service edits to their own booking. Unlike the admin bookingUpdateSchema
+// there is no `status`/`notes`: a customer may reschedule, edit their contact/vehicle
+// details, and cancel (via the `cancel` flag) — nothing else.
+export const customerManageSchema = z
+  .object({
+    appointmentDate: appointmentDateField.optional(),
+    appointmentTime: appointmentTimeField.optional(),
+    customerName: z.string().min(1, "Name is required").max(255).optional(),
+    customerEmail: z.string().email("Invalid email address").optional(),
+    customerPhone: z
+      .string()
+      .min(1, "Phone is required")
+      .max(50)
+      .refine(hasPlausiblePhoneDigits, "Enter a valid phone number")
+      .optional(),
+    vehicleYear: z.string().regex(/^\d{4}$/, "Must be a 4-digit year").optional(),
+    vehicleMake: z.string().min(1, "Make is required").max(100).optional(),
+    vehicleModel: z.string().min(1, "Model is required").max(100).optional(),
+    cancel: z.literal(true).optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, "No fields to update");
+
+export const chatMessageSchema = z.object({
+  body: z.string().min(1, "Message is required").max(2000),
+});
+
 export const contactSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   email: z.string().email("Invalid email address"),

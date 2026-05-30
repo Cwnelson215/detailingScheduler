@@ -1,7 +1,8 @@
-import { sql } from "drizzle-orm";
+import { sql, isNull, eq } from "drizzle-orm";
 import { db } from "./index";
 import * as schema from "./schema";
 import { DEFAULT_ADMIN_PASSWORD_HASH } from "../lib/admin-password";
+import { generateJobId } from "../lib/job-id";
 
 export async function runMigrations() {
   console.log("Running database migrations...");
@@ -71,6 +72,40 @@ export async function runMigrations() {
   await db.execute(sql`ALTER TABLE bookings ALTER COLUMN confirmation_token SET NOT NULL`);
   await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP`);
 
+  // Job ID: short customer-facing handle. Add nullable, backfill each existing row with a
+  // unique code, then enforce NOT NULL + a unique index (mirrors confirmation_token above).
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS job_id VARCHAR(16)`);
+  const needJobId = await db
+    .select({ id: schema.bookings.id })
+    .from(schema.bookings)
+    .where(isNull(schema.bookings.jobId));
+  if (needJobId.length > 0) {
+    const existing = await db
+      .select({ jobId: schema.bookings.jobId })
+      .from(schema.bookings);
+    const issued = new Set(existing.map((r) => r.jobId).filter(Boolean) as string[]);
+    for (const row of needJobId) {
+      let code = generateJobId();
+      while (issued.has(code)) code = generateJobId();
+      issued.add(code);
+      await db.update(schema.bookings).set({ jobId: code }).where(eq(schema.bookings.id, row.id));
+    }
+  }
+  await db.execute(sql`ALTER TABLE bookings ALTER COLUMN job_id SET NOT NULL`);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS booking_messages (
+      id SERIAL PRIMARY KEY,
+      booking_id INTEGER NOT NULL REFERENCES bookings(id),
+      sender VARCHAR(10) NOT NULL,
+      ciphertext TEXT NOT NULL,
+      iv VARCHAR(32) NOT NULL,
+      auth_tag VARCHAR(32) NOT NULL,
+      read_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await db.execute(
     sql`CREATE INDEX IF NOT EXISTS bookings_appointment_date_idx ON bookings (appointment_date)`,
   );
@@ -78,6 +113,12 @@ export async function runMigrations() {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS bookings_service_id_idx ON bookings (service_id)`);
   await db.execute(
     sql`CREATE INDEX IF NOT EXISTS bookings_confirmation_token_idx ON bookings (confirmation_token)`,
+  );
+  await db.execute(
+    sql`CREATE UNIQUE INDEX IF NOT EXISTS bookings_job_id_idx ON bookings (job_id)`,
+  );
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS booking_messages_booking_id_idx ON booking_messages (booking_id)`,
   );
 
   // Seed default business hours if empty

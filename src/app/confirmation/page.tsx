@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle } from "lucide-react";
 import { formatCurrency, formatDuration } from "@/lib/utils";
 import { getBusinessInfo } from "@/lib/business-info";
+import { formatJobId } from "@/lib/job-id";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export default async function ConfirmationPage({
   const result = await db
     .select({
       id: bookings.id,
+      jobId: bookings.jobId,
       serviceName: services.name,
       priceCents: services.priceCents,
       durationMins: services.durationMins,
@@ -83,6 +85,10 @@ export default async function ConfirmationPage({
                 <span className="font-medium">{booking.id}</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-muted-foreground">Job ID</span>
+                <span className="font-medium">{formatJobId(booking.jobId)}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-muted-foreground">Service</span>
                 <span className="font-medium">{booking.serviceName}</span>
               </div>
@@ -126,6 +132,15 @@ export default async function ConfirmationPage({
           <p className="mx-auto mt-4 max-w-md text-sm text-muted-foreground">
             * Final pricing may vary depending on the condition of your vehicle.
             Especially dirty or heavily soiled vehicles may incur an additional charge.
+          </p>
+
+          <p className="mx-auto mt-4 max-w-md text-sm text-muted-foreground">
+            Need to reschedule, cancel, or message us? Look up your booking anytime with your
+            Job ID and email at{" "}
+            <Link href="/lookup" className="font-medium text-primary hover:underline">
+              {info.name} / lookup
+            </Link>
+            .
           </p>
 
           <div className="mt-8 flex gap-4 justify-center">

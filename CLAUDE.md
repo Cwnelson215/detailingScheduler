@@ -83,6 +83,16 @@ Older service tiers were **deactivated, not deleted** (`npm run db:cleanup-servi
 
 The `/admin` dashboard is guarded by **NextAuth** (`src/lib/auth.ts`) using a single-credential (password-only) provider. The password is bcrypt-compared against the `admin_password_hash` row in `admin_settings`. Sign-in page is `/admin/login`; sessions are JWT (24h). The seeded default password is `admin123` (change it). Password changes go through `POST /api/admin/password`. Requires `NEXTAUTH_SECRET` and `NEXTAUTH_URL` in production.
 
+## Job IDs & Customer Chat
+
+Every booking has a short, unguessable **Job ID** (`bookings.jobId`, Crockford base32, 8 chars; generated in `src/lib/job-id.ts`, shown on the confirmation page and in emails). Customers self-serve without an account:
+
+- **Lookup** (`/lookup` → `POST /api/bookings/lookup`): Job ID **+ the email on the booking** (two factors, timing-safe compare, rate-limited, single generic failure to avoid enumeration). On success it sets an httpOnly, **booking-scoped** signed cookie (`cust_session`, HMAC via `src/lib/customer-session.ts`, 2h). That cookie — not an admin login — authorizes the customer area.
+- **Customer area** (`/booking/[jobId]`, cookie-gated): reschedule / cancel / edit contact+vehicle via `POST /api/bookings/[jobId]/manage` (reuses the advisory-lock + `isSlotAvailable` reschedule path), plus a live chat. Customer mutations are **POST** because `middleware.ts` reserves `PATCH`/`DELETE` on `/api/bookings/*` for admins.
+- **Chat** is two-way and **encrypted at rest** (AES-256-GCM, `src/lib/crypto.ts`, key `MESSAGE_ENCRYPTION_KEY`). Messages live in `booking_messages` (ciphertext/iv/authTag). Real-time delivery is **SSE** (`src/lib/sse.ts`) over an **in-process** pub/sub (`src/lib/chat-bus.ts`) — single-replica only; swap for Redis pub/sub if ever scaled. The owner reads/replies on the admin **Messages** board (`/admin/messages`), gets an email when a customer messages (reply-to the customer), and customer-facing replies email the customer (best-effort, env-gated).
+
+**`MESSAGE_ENCRYPTION_KEY`**: 32-byte base64 key (`openssl rand -base64 32`). Set in production via the `app-secrets` Secret; unset locally derives an insecure dev key (zero-config dev/test). **Rotating it makes prior ciphertext undecryptable** (no key-versioning) — decrypt is wrapped in try/catch so a bad/rotated row degrades to a placeholder instead of crashing the thread. It is **not** end-to-end: the server holds the key to render messages in admin and include snippets in emails.
+
 ## Email
 
 Booking emails are sent via **Resend** (`resend` package; logic in `src/lib/email.ts`). On each booking, `src/app/api/bookings/route.ts` fires two emails through `Promise.allSettled`, so an email failure never blocks the booking from being saved:
@@ -121,7 +131,7 @@ Run `npm run test` + `npm run typecheck` from `src/` before pushing.
 
 1. **Build & push** the image with Buildx to GHCR — `ghcr.io/cwnelson215/detailing:<sha>` and `:latest` (GHA layer cache).
 2. **Connect to the tailnet** via `tailscale/github-action` (`TS_AUTHKEY` secret) and configure `kubectl` from the base64-encoded `KUBECONFIG` secret.
-3. **Create/update `app-secrets`** in the `detailing` namespace from repo secrets (`NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `BOOKING_NOTIFY_EMAIL`) via `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`.
+3. **Create/update `app-secrets`** in the `detailing` namespace from repo secrets (`NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `BOOKING_NOTIFY_EMAIL`, `SITE_URL`, `CRON_SECRET`, `MESSAGE_ENCRYPTION_KEY`) via `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`.
 4. **Set the image tag** in the prod overlay (`kustomize edit set image`) and **apply** with `kubectl apply -k k8s/overlays/prod`.
 5. **Wait** for `kubectl rollout status deployment/detailing -n detailing`.
 
