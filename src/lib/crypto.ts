@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { logger } from "./logger";
 
 // AES-256-GCM encryption-at-rest for customer/owner chat messages. The key comes from
 // MESSAGE_ENCRYPTION_KEY (32 bytes, base64) supplied via the k8s app-secrets Secret.
@@ -31,12 +32,23 @@ function getKey(): Buffer {
     throw new Error("MESSAGE_ENCRYPTION_KEY must be set in production");
   }
   if (!warnedDevKey) {
-    console.warn(
-      "[crypto] MESSAGE_ENCRYPTION_KEY is unset — using the insecure development key. Do not use in production.",
-    );
+    logger.warn("MESSAGE_ENCRYPTION_KEY is unset — using the insecure development key. Do not use in production.");
     warnedDevKey = true;
   }
   return crypto.createHash("sha256").update("dev-insecure-message-key").digest();
+}
+
+// Constant-time, length-independent string compare for secret/token checks (e.g. the
+// cron bearer token), so response timing doesn't leak how close a guess was.
+export function timingSafeEqualStr(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) {
+    // Compare equal-length buffers to keep timing flat, then fail on the length mismatch.
+    crypto.timingSafeEqual(ab, ab);
+    return false;
+  }
+  return crypto.timingSafeEqual(ab, bb);
 }
 
 export function encryptMessage(plaintext: string): Sealed {

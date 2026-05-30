@@ -11,6 +11,7 @@ import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { requireCustomerBooking } from "@/lib/customer-session";
 import { createMessage, loadHistory, markRead } from "@/lib/chat";
 import { sendCustomerMessageNotification } from "@/lib/email";
+import { logger } from "@/lib/logger";
 
 async function authorize(request: NextRequest, jobId: string) {
   const [booking] = await db
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest, { params }: { params: { jobId: 
       snippet: parsed.data.body,
     });
   } catch (err) {
-    console.error(`[chat] failed to notify owner of message for booking #${booking.id}:`, err);
+    logger.error("chat owner-notify failed", { bookingId: booking.id, err: String(err) });
   }
 
   return Response.json(message, { status: 201 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import crypto from "node:crypto";
-import { encryptMessage, decryptMessage } from "./crypto";
+import { encryptMessage, decryptMessage, timingSafeEqualStr } from "./crypto";
 
 describe("crypto (message encryption)", () => {
   const original = process.env.MESSAGE_ENCRYPTION_KEY;
@@ -41,5 +41,24 @@ describe("crypto (message encryption)", () => {
   it("rejects a key that is not 32 bytes", () => {
     process.env.MESSAGE_ENCRYPTION_KEY = Buffer.from("too-short").toString("base64");
     expect(() => encryptMessage("x")).toThrow(/32 bytes/);
+  });
+});
+
+describe("timingSafeEqualStr", () => {
+  it("returns true for equal strings", () => {
+    expect(timingSafeEqualStr("s3cr3t-token", "s3cr3t-token")).toBe(true);
+  });
+
+  it("returns false for different same-length strings", () => {
+    expect(timingSafeEqualStr("s3cr3t-tokenA", "s3cr3t-tokenB")).toBe(false);
+  });
+
+  it("returns false for different-length strings (e.g. a trailing newline)", () => {
+    expect(timingSafeEqualStr("s3cr3t-token", "s3cr3t-token\n")).toBe(false);
+    expect(timingSafeEqualStr("", "x")).toBe(false);
+  });
+
+  it("returns true for two empty strings", () => {
+    expect(timingSafeEqualStr("", "")).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { contactSchema } from "@/lib/validations";
 import { sendContactMessage } from "@/lib/email";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   if (!rateLimit(`contact:${getClientIp(request)}`, 5, 10 * 60 * 1000)) {
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
   try {
     await sendContactMessage(parsed.data);
   } catch (e) {
-    console.error("[contact] failed to send message:", e);
+    logger.error("contact message send failed", { err: String(e) });
     return Response.json(
       { error: "Couldn't send your message. Please try again." },
       { status: 502 },

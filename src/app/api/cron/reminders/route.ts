@@ -5,6 +5,8 @@ import { db } from "@/db";
 import { bookings, services } from "@/db/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { sendBookingStatusUpdate } from "@/lib/email";
+import { timingSafeEqualStr } from "@/lib/crypto";
+import { logger } from "@/lib/logger";
 
 // Sends next-day reminders. Intended to be triggered once a day by the k8s CronJob
 // (see k8s/base/reminder-cronjob.yaml), guarded by a shared CRON_SECRET bearer token.
@@ -17,7 +19,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "CRON_SECRET not configured" }, { status: 503 });
   }
   const provided = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
-  if (provided !== secret) {
+  if (!provided || !timingSafeEqualStr(provided, secret)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -76,7 +78,7 @@ export async function POST(request: NextRequest) {
         .where(eq(bookings.id, b.id));
       sent++;
     } catch (err) {
-      console.error(`[reminders] failed for booking #${b.id}:`, err);
+      logger.error("reminder send failed", { bookingId: b.id, err: String(err) });
     }
   }
 

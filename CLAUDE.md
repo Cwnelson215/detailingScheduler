@@ -156,5 +156,16 @@ Run `npm run test` + `npm run typecheck` from `src/` before pushing.
 - **Namespace:** `detailing`. **Image:** `ghcr.io/cwnelson215/detailing`.
 - **Secrets:** `app-secrets` (created by the deploy workflow from GitHub repo secrets) and `db-creds` (platform-provisioned). Set repo secrets via the GitHub UI/CLI.
 - **TLS:** cert-manager `Certificate` issued by the `letsencrypt-prod` ClusterIssuer; served on `detailing.cwnel.com` through Traefik.
-- **Health check:** `GET /health` must return HTTP 200 — used by both k8s probes.
+- **Health checks:** `GET /health` is static and must return HTTP 200 — the k8s **liveness** probe. `GET /ready` pings Postgres (`select 1`) and is the **readiness** probe (503 when the DB is unreachable, so a DB blip marks the pod NotReady without restart-looping it). Both wired in `k8s/base/deployment.yaml`.
 - **DB migrations:** edit `src/db/schema.ts`, then `npm run db:generate` and `npm run db:migrate`.
+- **Logging:** request-path failures log structured JSON lines via `src/lib/logger.ts` (`logger.info/warn/error`). Prefer it over raw `console.*` in route handlers/boundaries; keep context PII-light (log identifiers, not message bodies). Startup/migration scripts still use `console`.
+
+## Deferred hardening (TODO — not yet done)
+
+Identified in a hardening review and intentionally deferred (the Core pass —
+structured logger, error boundaries, `/ready` probe, constant-time cron compare —
+is done):
+
+- **Admin bookings pagination** — the admin bookings server component and `GET /api/bookings` fetch all rows; add LIMIT/OFFSET (or cursor) + paging UI as booking volume grows.
+- **Audit trail** — no `audit_events` table; sensitive admin actions (password change, booking status changes, business-info edits, cancellations) are unrecorded.
+- **Persistent rate limiting** — `src/lib/rate-limit.ts` is in-memory and resets on pod restart/deploy; move to a Postgres-backed store (no Redis in-cluster) if the brute-force-window-on-deploy gap matters.

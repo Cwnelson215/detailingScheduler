@@ -9,6 +9,7 @@ import { chatMessageSchema } from "@/lib/validations";
 import { requireAdmin } from "@/lib/require-admin";
 import { createMessage, loadHistory, markRead } from "@/lib/chat";
 import { sendOwnerReplyNotification } from "@/lib/email";
+import { logger } from "@/lib/logger";
 
 function parseBookingId(raw: string): number | null {
   const id = parseInt(raw, 10);
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest, { params }: { params: { booking
       snippet: parsed.data.body,
     });
   } catch (err) {
-    console.error(`[chat] failed to notify customer of reply for booking #${bookingId}:`, err);
+    logger.error("chat customer-notify failed", { bookingId, err: String(err) });
   }
 
   return Response.json(message, { status: 201 });

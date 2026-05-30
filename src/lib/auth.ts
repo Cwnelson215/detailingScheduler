@@ -6,6 +6,7 @@ import { adminSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getNextAuthSecret } from "./env";
 import { clientIpFromHeaders, rateLimit } from "./rate-limit";
+import { logger } from "./logger";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -25,7 +26,7 @@ export const authOptions: NextAuthOptions = {
           return Array.isArray(v) ? v[0] : v;
         });
         if (!rateLimit(`login:${ip}`, 5, 15 * 60 * 1000)) {
-          console.warn(`[auth] login rate limit exceeded for ${ip}`);
+          logger.warn("login rate limit exceeded", { ip });
           return null;
         }
 

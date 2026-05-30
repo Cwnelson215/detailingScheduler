@@ -10,6 +10,7 @@ import { bookingSchema } from "@/lib/validations";
 import { isSlotAvailable } from "@/lib/availability";
 import { sendBookingConfirmation, sendOwnerNotification } from "@/lib/email";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
     ]);
     for (const r of results) {
       if (r.status === "rejected") {
-        console.error(`[bookings] failed to send email for booking #${booking.id}:`, r.reason);
+        logger.error("booking email send failed", { bookingId: booking.id, err: String(r.reason) });
       }
     }
   }

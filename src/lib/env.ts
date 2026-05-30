@@ -1,3 +1,5 @@
+import { logger } from "./logger";
+
 export function getNextAuthSecret(): string {
   const secret = process.env.NEXTAUTH_SECRET;
   if (secret) return secret;
@@ -10,8 +12,6 @@ export function getNextAuthSecret(): string {
   }
   // Reached only outside real production. Be noisy: a misconfigured NODE_ENV is the
   // only way this insecure, publicly-known secret could ever sign live sessions.
-  console.warn(
-    "[env] NEXTAUTH_SECRET is unset — using the insecure development fallback secret.",
-  );
+  logger.warn("NEXTAUTH_SECRET is unset — using the insecure development fallback secret");
   return "dev-secret-change-in-production";
 }
