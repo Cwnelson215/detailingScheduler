@@ -9,11 +9,15 @@ import { sendBookingStatusUpdate } from "@/lib/email";
 // Sends next-day reminders. Intended to be triggered once a day by the k8s CronJob
 // (see k8s/base/reminder-cronjob.yaml), guarded by a shared CRON_SECRET bearer token.
 export async function POST(request: NextRequest) {
-  const secret = process.env.CRON_SECRET;
+  // Trim both sides: a stray trailing newline in the CRON_SECRET (a common artifact
+  // of `openssl rand -base64 32` copy-paste) would otherwise both corrupt the curl
+  // Authorization header (400 at the HTTP layer) and fail an exact-match compare (401).
+  const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
     return Response.json({ error: "CRON_SECRET not configured" }, { status: 503 });
   }
-  if (request.headers.get("authorization") !== `Bearer ${secret}`) {
+  const provided = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
+  if (provided !== secret) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 

@@ -26,7 +26,11 @@ spec:
               command:
                 - sh
                 - -c
+                # Strip whitespace from the secret before building the header: a stray
+                # newline in CRON_SECRET would inject a header break and get the request
+                # rejected with HTTP 400 before it ever reaches the route handler.
                 - >
+                  TOKEN=$(printf %s "$CRON_SECRET" | tr -d '[:space:]');
                   curl -fsS -X POST
-                  -H "Authorization: Bearer ${CRON_SECRET}"
+                  -H "Authorization: Bearer $TOKEN"
                   http://detailing/api/cron/reminders
