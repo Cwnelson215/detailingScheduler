@@ -26,7 +26,8 @@ const base = {
   vehicleMake: "Toyota",
   vehicleModel: "Camry",
   appointmentDate: "2026-06-15",
-  appointmentTime: "13:30",
+  appointmentTime: "15:00",
+  dropoffWindow: "evening" as const,
 };
 
 beforeEach(() => {
@@ -39,12 +40,13 @@ beforeEach(() => {
 });
 
 describe("sendBookingConfirmation", () => {
-  it("renders price, 12-hour time, and HTML-escaped customer input", async () => {
+  it("renders price, drop-off window, and HTML-escaped customer input", async () => {
     await sendBookingConfirmation(base);
     expect(sendMock).toHaveBeenCalledOnce();
     const payload = sendMock.mock.calls[0][0];
     expect(payload.to).toBe("jane@example.com");
-    expect(payload.subject).toContain("1:30 PM");
+    expect(payload.subject).toContain("Evening drop-off");
+    expect(payload.html).toContain("Evening drop-off (3:00 PM)");
     expect(payload.html).toContain("$150.00");
     expect(payload.html).toContain("&lt;b&gt;"); // name escaped, not raw <b>
     expect(payload.html).not.toContain("<b>");

@@ -28,8 +28,8 @@ export default async function LookupPage() {
         <div className="max-w-md mx-auto">
           <h1 className="text-3xl font-bold mb-2 text-foreground">Look up your booking</h1>
           <p className="text-muted-foreground mb-8">
-            Enter the Job ID from your confirmation along with the email on your booking. From
-            there you can reschedule, cancel, or message us directly.
+            Enter the email on your booking to view your upcoming appointments. To reschedule,
+            cancel, or message us, you&apos;ll confirm your Job ID with a one-time code we email you.
           </p>
           <Card>
             <CardContent className="p-6">

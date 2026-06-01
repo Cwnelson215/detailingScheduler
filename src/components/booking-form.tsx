@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatDuration } from "@/lib/utils";
 import { CalendarPicker } from "@/components/calendar-picker";
-import { TimeSlotPicker } from "@/components/time-slot-picker";
+import { WindowPicker } from "@/components/window-picker";
+import { windowRange, type DropoffWindow, type WindowOption } from "@/lib/format";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 interface Service {
@@ -20,20 +21,15 @@ interface Service {
   priceCents: number;
 }
 
-interface TimeSlot {
-  time: string;
-  available: boolean;
-}
-
-const steps = ["Service", "Date", "Time", "Details", "Review"];
+const steps = ["Service", "Date", "Drop-off", "Details", "Review"];
 
 export function BookingForm({ services }: { services: Service[] }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>("");
-  const [selectedTime, setSelectedTime] = useState<string>("");
-  const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [selectedWindow, setSelectedWindow] = useState<DropoffWindow | "">("");
+  const [options, setOptions] = useState<WindowOption[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -48,21 +44,21 @@ export function BookingForm({ services }: { services: Service[] }) {
   });
 
   useEffect(() => {
-    if (selectedDate && selectedService) {
+    if (selectedDate) {
       setLoadingSlots(true);
-      setSelectedTime("");
-      fetch(`/api/availability?date=${selectedDate}&serviceId=${selectedService.id}`)
+      setSelectedWindow("");
+      fetch(`/api/availability?date=${selectedDate}`)
         .then((r) => r.json())
-        .then((data) => setSlots(data))
+        .then((data) => setOptions(Array.isArray(data) ? data : []))
         .finally(() => setLoadingSlots(false));
     }
-  }, [selectedDate, selectedService]);
+  }, [selectedDate]);
 
   const canNext = () => {
     switch (step) {
       case 0: return !!selectedService;
       case 1: return !!selectedDate;
-      case 2: return !!selectedTime;
+      case 2: return !!selectedWindow;
       case 3:
         return (
           form.customerName &&
@@ -86,7 +82,7 @@ export function BookingForm({ services }: { services: Service[] }) {
         body: JSON.stringify({
           serviceId: selectedService!.id,
           appointmentDate: selectedDate,
-          appointmentTime: selectedTime,
+          dropoffWindow: selectedWindow,
           ...form,
         }),
       });
@@ -106,13 +102,7 @@ export function BookingForm({ services }: { services: Service[] }) {
     }
   };
 
-  const formatTimeDisplay = (time: string) => {
-    const [h, m] = time.split(":");
-    const hour = parseInt(h);
-    const ampm = hour >= 12 ? "PM" : "AM";
-    const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-    return `${display}:${m} ${ampm}`;
-  };
+  const selectedOption = options.find((o) => o.key === selectedWindow);
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -186,19 +176,22 @@ export function BookingForm({ services }: { services: Service[] }) {
         </div>
       )}
 
-      {/* Step 2: Select Time */}
+      {/* Step 2: Select Drop-off Window */}
       {step === 2 && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Choose a Time</h2>
+          <h2 className="text-xl font-semibold">Choose a Drop-off Window</h2>
+          <p className="text-sm text-muted-foreground">
+            Drop your vehicle off any time within the window you choose.
+          </p>
           {loadingSlots ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
           ) : (
-            <TimeSlotPicker
-              slots={slots}
-              selected={selectedTime}
-              onSelect={setSelectedTime}
+            <WindowPicker
+              options={options}
+              selected={selectedWindow}
+              onSelect={setSelectedWindow}
             />
           )}
         </div>
@@ -299,8 +292,12 @@ export function BookingForm({ services }: { services: Service[] }) {
                 <span className="font-medium">{new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Time</span>
-                <span className="font-medium">{formatTimeDisplay(selectedTime)}</span>
+                <span className="text-muted-foreground">Drop-off</span>
+                <span className="font-medium">
+                  {selectedOption
+                    ? `${selectedOption.label} (${windowRange(selectedOption.startTime, selectedOption.endTime)})`
+                    : ""}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Duration</span>

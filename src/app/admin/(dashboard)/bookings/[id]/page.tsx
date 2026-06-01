@@ -5,19 +5,12 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDuration } from "@/lib/utils";
+import { dropoffSummary } from "@/lib/format";
 import { BookingActions } from "@/components/admin/booking-actions";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
-
-function formatTime(time: string): string {
-  const [h, m] = time.split(":");
-  const hour = parseInt(h);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-  return `${display}:${m} ${ampm}`;
-}
 
 const statusColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   pending: "outline",
@@ -46,6 +39,7 @@ export default async function AdminBookingDetailPage({
       vehicleModel: bookings.vehicleModel,
       appointmentDate: bookings.appointmentDate,
       appointmentTime: bookings.appointmentTime,
+      dropoffWindow: bookings.dropoffWindow,
       status: bookings.status,
       notes: bookings.notes,
       createdAt: bookings.createdAt,
@@ -96,8 +90,8 @@ export default async function AdminBookingDetailPage({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Time</span>
-              <span className="font-medium">{formatTime(booking.appointmentTime)}</span>
+              <span className="text-muted-foreground">Drop-off</span>
+              <span className="font-medium">{dropoffSummary(booking.dropoffWindow, booking.appointmentTime)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Duration</span>

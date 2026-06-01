@@ -1,110 +1,140 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { db } from "@/db";
-import { isSlotAvailable, getAvailableSlots } from "@/lib/availability";
+import { getWindowOptions, isWindowAvailable } from "@/lib/availability";
 import {
   resetDb,
   seedService,
   seedBooking,
   blockDate,
+  setHours,
   futureDateForWeekday,
 } from "@/test/fixtures";
 
-// Seeded business hours (from runMigrations): Mon–Fri 08:00–17:00, Sat 09:00–14:00,
-// Sun closed. Tests use a 60-minute service so slot math is easy to reason about.
+// Seeded business hours (from runMigrations): Mon–Fri offer morning (07:00–09:00) and
+// evening (15:00–17:00) windows, Saturday is morning-only, Sunday is closed.
 const MONDAY = futureDateForWeekday(1);
+const SATURDAY = futureDateForWeekday(6);
 const SUNDAY = futureDateForWeekday(0);
 
 let serviceId: number;
 
 beforeEach(async () => {
   await resetDb();
-  const svc = await seedService({ durationMins: 60 });
+  // resetDb leaves business_hours intact, so restore the days these tests touch to the
+  // seeded defaults — otherwise a test that disables a window leaks into later ones.
+  await setHours(1, {
+    isOpen: true,
+    morningEnabled: true,
+    morningStart: "07:00",
+    morningEnd: "09:00",
+    eveningEnabled: true,
+    eveningStart: "15:00",
+    eveningEnd: "17:00",
+  });
+  await setHours(6, {
+    isOpen: true,
+    morningEnabled: true,
+    morningStart: "07:00",
+    morningEnd: "09:00",
+    eveningEnabled: false,
+    eveningStart: null,
+    eveningEnd: null,
+  });
+  const svc = await seedService();
   serviceId = svc.id;
 });
 
-describe("isSlotAvailable", () => {
-  it("allows a clear slot inside business hours", async () => {
-    expect(await isSlotAvailable(db, MONDAY, "09:00", serviceId)).toBe(true);
+describe("getWindowOptions", () => {
+  it("returns both windows on a weekday, all available when empty", async () => {
+    const options = await getWindowOptions(MONDAY);
+    expect(options.map((o) => o.key)).toEqual(["morning", "evening"]);
+    expect(options.every((o) => o.available)).toBe(true);
+    expect(options[0]).toMatchObject({ startTime: "07:00", endTime: "09:00" });
+    expect(options[1]).toMatchObject({ startTime: "15:00", endTime: "17:00" });
   });
 
-  it("rejects a blocked date", async () => {
-    await blockDate(MONDAY, "holiday");
-    expect(await isSlotAvailable(db, MONDAY, "09:00", serviceId)).toBe(false);
+  it("returns morning only on Saturday", async () => {
+    const options = await getWindowOptions(SATURDAY);
+    expect(options.map((o) => o.key)).toEqual(["morning"]);
   });
 
-  it("rejects a day the shop is closed", async () => {
-    expect(await isSlotAvailable(db, SUNDAY, "10:00", serviceId)).toBe(false);
-  });
-
-  it("rejects a start time before opening", async () => {
-    expect(await isSlotAvailable(db, MONDAY, "07:00", serviceId)).toBe(false);
-  });
-
-  it("rejects when the service would run past closing", async () => {
-    // 16:30 + 60min = 17:30, past the 17:00 close.
-    expect(await isSlotAvailable(db, MONDAY, "16:30", serviceId)).toBe(false);
-  });
-
-  it("rejects an unknown service", async () => {
-    expect(await isSlotAvailable(db, MONDAY, "09:00", 9999)).toBe(false);
-  });
-
-  it("rejects a slot that overlaps an active booking", async () => {
-    await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "09:00" });
-    expect(await isSlotAvailable(db, MONDAY, "09:30", serviceId)).toBe(false);
-  });
-
-  it("allows a back-to-back slot (overlap is half-open)", async () => {
-    await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "09:00" });
-    expect(await isSlotAvailable(db, MONDAY, "10:00", serviceId)).toBe(true);
-  });
-
-  it("ignores the booking being rescheduled via excludeBookingId", async () => {
-    const b = await seedBooking({
-      serviceId,
-      appointmentDate: MONDAY,
-      appointmentTime: "09:00",
-    });
-    expect(await isSlotAvailable(db, MONDAY, "09:00", serviceId)).toBe(false);
-    expect(await isSlotAvailable(db, MONDAY, "09:00", serviceId, b.id)).toBe(true);
-  });
-
-  it("does not let a cancelled booking block a slot", async () => {
-    await seedBooking({
-      serviceId,
-      appointmentDate: MONDAY,
-      appointmentTime: "09:00",
-      status: "cancelled",
-    });
-    expect(await isSlotAvailable(db, MONDAY, "09:00", serviceId)).toBe(true);
-  });
-});
-
-describe("getAvailableSlots", () => {
-  it("returns 30-min increment slots within hours, all open when empty", async () => {
-    const slots = await getAvailableSlots(MONDAY, serviceId);
-    expect(slots[0].time).toBe("08:00");
-    // Last slot whose end (start+60) still fits before 17:00 close is 16:00.
-    expect(slots[slots.length - 1].time).toBe("16:00");
-    expect(slots.every((s) => s.available)).toBe(true);
+  it("returns nothing for a closed day", async () => {
+    expect(await getWindowOptions(SUNDAY)).toEqual([]);
   });
 
   it("returns nothing for a blocked date", async () => {
     await blockDate(MONDAY);
-    expect(await getAvailableSlots(MONDAY, serviceId)).toEqual([]);
+    expect(await getWindowOptions(MONDAY)).toEqual([]);
   });
 
-  it("returns nothing for a closed day", async () => {
-    expect(await getAvailableSlots(SUNDAY, serviceId)).toEqual([]);
+  it("marks a window taken by an active booking unavailable, leaving the other free", async () => {
+    await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
+    const options = await getWindowOptions(MONDAY);
+    const byKey = Object.fromEntries(options.map((o) => [o.key, o.available]));
+    expect(byKey.morning).toBe(false);
+    expect(byKey.evening).toBe(true);
   });
 
-  it("marks slots conflicting with an existing booking unavailable", async () => {
-    await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "09:00" });
-    const slots = await getAvailableSlots(MONDAY, serviceId);
-    const at = (t: string) => slots.find((s) => s.time === t)?.available;
-    expect(at("08:30")).toBe(false); // 08:30–09:30 overlaps 09:00–10:00
-    expect(at("09:00")).toBe(false);
-    expect(at("09:30")).toBe(false);
-    expect(at("10:00")).toBe(true); // back-to-back, no overlap
+  it("does not let a cancelled booking mark a window unavailable", async () => {
+    await seedBooking({
+      serviceId,
+      appointmentDate: MONDAY,
+      dropoffWindow: "morning",
+      status: "cancelled",
+    });
+    const options = await getWindowOptions(MONDAY);
+    expect(options.find((o) => o.key === "morning")?.available).toBe(true);
+  });
+
+  it("reflects an admin disabling a window", async () => {
+    await setHours(1, { eveningEnabled: false });
+    const options = await getWindowOptions(MONDAY);
+    expect(options.map((o) => o.key)).toEqual(["morning"]);
+  });
+});
+
+describe("isWindowAvailable", () => {
+  it("allows a free window and returns its resolved start time", async () => {
+    expect(await isWindowAvailable(db, MONDAY, "morning")).toEqual({ ok: true, startTime: "07:00" });
+    expect(await isWindowAvailable(db, MONDAY, "evening")).toEqual({ ok: true, startTime: "15:00" });
+  });
+
+  it("rejects a blocked date", async () => {
+    await blockDate(MONDAY, "holiday");
+    expect(await isWindowAvailable(db, MONDAY, "morning")).toMatchObject({ ok: false });
+  });
+
+  it("rejects a closed day", async () => {
+    expect(await isWindowAvailable(db, SUNDAY, "morning")).toMatchObject({ ok: false });
+  });
+
+  it("rejects a window disabled for that day (evening on Saturday)", async () => {
+    expect(await isWindowAvailable(db, SATURDAY, "evening")).toMatchObject({ ok: false });
+  });
+
+  it("rejects a window already taken", async () => {
+    await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
+    expect(await isWindowAvailable(db, MONDAY, "morning")).toMatchObject({ ok: false });
+  });
+
+  it("still allows the other window when one is taken", async () => {
+    await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
+    expect(await isWindowAvailable(db, MONDAY, "evening")).toMatchObject({ ok: true });
+  });
+
+  it("ignores the booking being rescheduled via excludeBookingId", async () => {
+    const b = await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
+    expect(await isWindowAvailable(db, MONDAY, "morning")).toMatchObject({ ok: false });
+    expect(await isWindowAvailable(db, MONDAY, "morning", b.id)).toMatchObject({ ok: true });
+  });
+
+  it("does not let a cancelled booking block a window", async () => {
+    await seedBooking({
+      serviceId,
+      appointmentDate: MONDAY,
+      dropoffWindow: "morning",
+      status: "cancelled",
+    });
+    expect(await isWindowAvailable(db, MONDAY, "morning")).toMatchObject({ ok: true });
   });
 });

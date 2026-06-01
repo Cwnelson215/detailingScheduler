@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { bookings } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { customerManageSchema } from "@/lib/validations";
-import { isSlotAvailable } from "@/lib/availability";
+import { isWindowAvailable } from "@/lib/availability";
 import { notifyBookingStatus } from "@/lib/email";
 import { normalizeJobId } from "@/lib/job-id";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
@@ -39,7 +39,7 @@ export async function POST(
   if (!parsed.success) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { cancel, appointmentDate, appointmentTime, ...contact } = parsed.data;
+  const { cancel, appointmentDate, dropoffWindow, ...contact } = parsed.data;
 
   // --- Cancel ---
   if (cancel) {
@@ -63,7 +63,7 @@ export async function POST(
 
   const isReschedule =
     (appointmentDate !== undefined && appointmentDate !== existing.appointmentDate) ||
-    (appointmentTime !== undefined && appointmentTime !== existing.appointmentTime.slice(0, 5));
+    (dropoffWindow !== undefined && dropoffWindow !== existing.dropoffWindow);
 
   // Non-schedule edits (contact/vehicle) — safe to set without the slot lock.
   const contactUpdates = Object.fromEntries(
@@ -73,21 +73,27 @@ export async function POST(
   let updated: Booking;
   if (isReschedule) {
     const targetDate = appointmentDate ?? existing.appointmentDate;
-    const targetTime = appointmentTime ?? existing.appointmentTime.slice(0, 5);
-    // Same advisory-lock + availability guard as create / admin reschedule.
+    const targetWindow = dropoffWindow ?? existing.dropoffWindow;
+    // Same advisory-lock + availability guard as create / admin reschedule. The window's
+    // start time is resolved server-side and stored as appointmentTime.
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${targetDate}))`);
-      const available = await isSlotAvailable(tx, targetDate, targetTime, existing.serviceId, existing.id);
-      if (!available) return null;
+      const { ok, startTime } = await isWindowAvailable(tx, targetDate, targetWindow, existing.id);
+      if (!ok || !startTime) return null;
       const [row] = await tx
         .update(bookings)
-        .set({ ...contactUpdates, appointmentDate: targetDate, appointmentTime: targetTime })
+        .set({
+          ...contactUpdates,
+          appointmentDate: targetDate,
+          dropoffWindow: targetWindow,
+          appointmentTime: startTime,
+        })
         .where(eq(bookings.id, existing.id))
         .returning();
       return row;
     });
     if (!result) {
-      return Response.json({ error: "That time slot is not available" }, { status: 409 });
+      return Response.json({ error: "That drop-off window is not available" }, { status: 409 });
     }
     updated = result;
   } else {

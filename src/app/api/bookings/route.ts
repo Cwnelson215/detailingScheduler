@@ -7,7 +7,7 @@ import { bookings, services } from "@/db/schema";
 import { desc, eq, sql } from "drizzle-orm";
 import { authOptions } from "@/lib/auth";
 import { bookingSchema } from "@/lib/validations";
-import { isSlotAvailable } from "@/lib/availability";
+import { isWindowAvailable } from "@/lib/availability";
 import { sendBookingConfirmation, sendOwnerNotification } from "@/lib/email";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
@@ -54,30 +54,38 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  // Re-verify availability and insert atomically. A per-day advisory lock serializes
+  // Re-verify the window is free and insert atomically. A per-day advisory lock serializes
   // concurrent booking attempts for the same date so two requests can't both pass the
-  // check-then-insert window and double-book a slot. `null` => slot taken.
+  // check-then-insert window and double-book a window. The window's start time is resolved
+  // server-side and stored as appointmentTime. `null` => window taken.
   // The unique job_id is generated per insert ($defaultFn); on the astronomically rare
-  // collision (23505 on bookings_job_id_idx) we retry, which regenerates it.
+  // collision (23505 on bookings_job_id_idx) we retry, which regenerates it. A 23505 on the
+  // (date, window) index means the window was just taken by a concurrent request => 409.
   let booking: typeof bookings.$inferSelect | null = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       booking = await db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${parsed.data.appointmentDate}))`);
-        const available = await isSlotAvailable(
+        const { ok, startTime } = await isWindowAvailable(
           tx,
           parsed.data.appointmentDate,
-          parsed.data.appointmentTime,
-          parsed.data.serviceId,
+          parsed.data.dropoffWindow,
         );
-        if (!available) return null;
-        const [row] = await tx.insert(bookings).values(parsed.data).returning();
+        if (!ok || !startTime) return null;
+        const [row] = await tx
+          .insert(bookings)
+          .values({ ...parsed.data, appointmentTime: startTime })
+          .returning();
         return row;
       });
       break;
     } catch (err) {
       const code = (err as { code?: string })?.code;
       const message = String((err as { message?: string })?.message ?? "");
+      if (code === "23505" && message.includes("date_window")) {
+        booking = null;
+        break;
+      }
       const isJobIdCollision = code === "23505" && message.includes("job_id");
       if (isJobIdCollision && attempt < 4) continue;
       throw err;
@@ -85,7 +93,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!booking) {
-    return Response.json({ error: "This time slot is no longer available" }, { status: 409 });
+    return Response.json({ error: "This drop-off window is no longer available" }, { status: 409 });
   }
 
   const [service] = await db
@@ -109,6 +117,7 @@ export async function POST(request: NextRequest) {
       vehicleModel: booking.vehicleModel,
       appointmentDate: booking.appointmentDate,
       appointmentTime: booking.appointmentTime,
+      dropoffWindow: booking.dropoffWindow,
     };
 
     const results = await Promise.allSettled([

@@ -59,7 +59,7 @@ describe("PATCH /api/bookings/[id]", () => {
   });
 
   it("updates status and emails the customer", async () => {
-    const b = await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "09:00" });
+    const b = await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
     const res = await PATCH(req("PATCH", { status: "confirmed" }), ctx(b.id));
     expect(res.status).toBe(200);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, b.id));
@@ -67,19 +67,20 @@ describe("PATCH /api/bookings/[id]", () => {
     expect(notifyBookingStatus).toHaveBeenCalledWith(expect.anything(), "confirmed");
   });
 
-  it("reschedules into a free slot (200)", async () => {
-    const b = await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "09:00" });
-    const res = await PATCH(req("PATCH", { appointmentTime: "11:00" }), ctx(b.id));
+  it("reschedules into a free window (200) and stores the resolved time", async () => {
+    const b = await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
+    const res = await PATCH(req("PATCH", { dropoffWindow: "evening" }), ctx(b.id));
     expect(res.status).toBe(200);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, b.id));
-    expect(row.appointmentTime.slice(0, 5)).toBe("11:00");
+    expect(row.dropoffWindow).toBe("evening");
+    expect(row.appointmentTime.slice(0, 5)).toBe("15:00");
     expect(notifyBookingStatus).toHaveBeenCalledWith(expect.anything(), "rescheduled");
   });
 
-  it("returns 409 when rescheduling onto a taken slot", async () => {
-    const a = await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "09:00" });
-    await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "11:00" });
-    const res = await PATCH(req("PATCH", { appointmentTime: "11:00" }), ctx(a.id));
+  it("returns 409 when rescheduling onto a taken window", async () => {
+    const a = await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
+    await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "evening", appointmentTime: "15:00" });
+    const res = await PATCH(req("PATCH", { dropoffWindow: "evening" }), ctx(a.id));
     expect(res.status).toBe(409);
   });
 });

@@ -93,6 +93,46 @@ export async function runMigrations() {
   }
   await db.execute(sql`ALTER TABLE bookings ALTER COLUMN job_id SET NOT NULL`);
 
+  // Drop-off windows: two fixed windows per weekday replace the legacy open→close model.
+  // Add the per-window columns (idempotent), then backfill existing rows to the product
+  // defaults. open_time/close_time are intentionally left in place but unused.
+  await db.execute(sql`ALTER TABLE business_hours ADD COLUMN IF NOT EXISTS morning_enabled BOOLEAN NOT NULL DEFAULT true`);
+  await db.execute(sql`ALTER TABLE business_hours ADD COLUMN IF NOT EXISTS morning_start TIME`);
+  await db.execute(sql`ALTER TABLE business_hours ADD COLUMN IF NOT EXISTS morning_end TIME`);
+  await db.execute(sql`ALTER TABLE business_hours ADD COLUMN IF NOT EXISTS evening_enabled BOOLEAN NOT NULL DEFAULT false`);
+  await db.execute(sql`ALTER TABLE business_hours ADD COLUMN IF NOT EXISTS evening_start TIME`);
+  await db.execute(sql`ALTER TABLE business_hours ADD COLUMN IF NOT EXISTS evening_end TIME`);
+  // Backfill any rows that predate the window columns (guarded so it runs once): Mon–Sat
+  // get the 7–9am morning window; Mon–Fri additionally get the 3–5pm evening window.
+  await db.execute(
+    sql`UPDATE business_hours SET morning_enabled = true, morning_start = '07:00', morning_end = '09:00' WHERE morning_start IS NULL AND day_of_week BETWEEN 1 AND 6`,
+  );
+  await db.execute(
+    sql`UPDATE business_hours SET evening_enabled = true, evening_start = '15:00', evening_end = '17:00' WHERE evening_start IS NULL AND day_of_week BETWEEN 1 AND 5`,
+  );
+
+  // Record which window each booking occupies. Add nullable, backfill existing rows by a
+  // noon cutoff (their stored appointmentTime is arbitrary historical data), enforce NOT NULL.
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS dropoff_window VARCHAR(10)`);
+  await db.execute(
+    sql`UPDATE bookings SET dropoff_window = CASE WHEN appointment_time < '12:00' THEN 'morning' ELSE 'evening' END WHERE dropoff_window IS NULL`,
+  );
+  await db.execute(sql`ALTER TABLE bookings ALTER COLUMN dropoff_window SET NOT NULL`);
+  // One car per (date, window): a partial unique index over non-cancelled bookings is the
+  // DB-level backstop for the app-level advisory-lock check. Guarded — legacy data could
+  // (rarely) already hold two same-window bookings on a date; correctness going forward
+  // still holds via the advisory lock + isWindowAvailable, so we log and continue.
+  try {
+    await db.execute(
+      sql`CREATE UNIQUE INDEX IF NOT EXISTS bookings_date_window_active_idx ON bookings (appointment_date, dropoff_window) WHERE status != 'cancelled'`,
+    );
+  } catch (err) {
+    console.warn(
+      "Could not create bookings_date_window_active_idx (legacy duplicate windows on a date?):",
+      err,
+    );
+  }
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS booking_messages (
       id SERIAL PRIMARY KEY,
@@ -121,17 +161,61 @@ export async function runMigrations() {
     sql`CREATE INDEX IF NOT EXISTS booking_messages_booking_id_idx ON booking_messages (booking_id)`,
   );
 
-  // Seed default business hours if empty
+  // One-time codes for the customer view→manage step-up (Job ID + emailed code).
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS customer_verification_codes (
+      id SERIAL PRIMARY KEY,
+      booking_id INTEGER NOT NULL REFERENCES bookings(id),
+      code_hash VARCHAR(64) NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      consumed_at TIMESTAMP,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS customer_verification_codes_booking_id_idx ON customer_verification_codes (booking_id)`,
+  );
+
+  // Seed default business hours if empty. Mon–Fri offer both drop-off windows
+  // (7–9am morning, 3–5pm evening); Saturday is morning-only; Sunday is closed.
   const existingHours = await db.select().from(schema.businessHours);
   if (existingHours.length === 0) {
+    const weekday = {
+      isOpen: true,
+      morningEnabled: true,
+      morningStart: "07:00",
+      morningEnd: "09:00",
+      eveningEnabled: true,
+      eveningStart: "15:00",
+      eveningEnd: "17:00",
+    };
     const defaultHours = [
-      { dayOfWeek: 0, isOpen: false, openTime: null, closeTime: null },
-      { dayOfWeek: 1, isOpen: true, openTime: "08:00", closeTime: "17:00" },
-      { dayOfWeek: 2, isOpen: true, openTime: "08:00", closeTime: "17:00" },
-      { dayOfWeek: 3, isOpen: true, openTime: "08:00", closeTime: "17:00" },
-      { dayOfWeek: 4, isOpen: true, openTime: "08:00", closeTime: "17:00" },
-      { dayOfWeek: 5, isOpen: true, openTime: "08:00", closeTime: "17:00" },
-      { dayOfWeek: 6, isOpen: true, openTime: "09:00", closeTime: "14:00" },
+      {
+        dayOfWeek: 0,
+        isOpen: false,
+        morningEnabled: false,
+        morningStart: null,
+        morningEnd: null,
+        eveningEnabled: false,
+        eveningStart: null,
+        eveningEnd: null,
+      },
+      { dayOfWeek: 1, ...weekday },
+      { dayOfWeek: 2, ...weekday },
+      { dayOfWeek: 3, ...weekday },
+      { dayOfWeek: 4, ...weekday },
+      { dayOfWeek: 5, ...weekday },
+      {
+        dayOfWeek: 6,
+        isOpen: true,
+        morningEnabled: true,
+        morningStart: "07:00",
+        morningEnd: "09:00",
+        eveningEnabled: false,
+        eveningStart: null,
+        eveningEnd: null,
+      },
     ];
     await db.insert(schema.businessHours).values(defaultHours);
     console.log("Seeded default business hours");

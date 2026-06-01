@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
       vehicleModel: bookings.vehicleModel,
       appointmentDate: bookings.appointmentDate,
       appointmentTime: bookings.appointmentTime,
+      dropoffWindow: bookings.dropoffWindow,
     })
     .from(bookings)
     .innerJoin(services, eq(bookings.serviceId, services.id))
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
           vehicleModel: b.vehicleModel,
           appointmentDate: b.appointmentDate,
           appointmentTime: b.appointmentTime,
+          dropoffWindow: b.dropoffWindow,
         },
         "reminder",
       );

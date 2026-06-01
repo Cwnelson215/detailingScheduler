@@ -1,32 +1,23 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import crypto from "node:crypto";
 import { NextRequest } from "next/server";
 import { db } from "@/db";
-import { bookings } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { bookings, services } from "@/db/schema";
+import { and, asc, eq, gte, ne, sql } from "drizzle-orm";
 import { lookupSchema } from "@/lib/validations";
-import { normalizeJobId } from "@/lib/job-id";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
-import { issueCustomerToken, customerCookieHeader } from "@/lib/customer-session";
+import { issueViewToken, viewCookieHeader, normalizeEmail } from "@/lib/customer-session";
 
-// Constant-time, length-independent string compare so the response timing doesn't reveal
-// whether the email matched (vs. e.g. the Job ID being unknown).
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) {
-    // Still run a compare of equal-length buffers to keep timing flat, then fail.
-    crypto.timingSafeEqual(ab, ab);
-    return false;
-  }
-  return crypto.timingSafeEqual(ab, bb);
+// Local (server-timezone) yyyy-mm-dd, matching how appointment_date is stored/compared.
+function todayStr(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-// Customer authenticates with Job ID + the email on the booking (two factors). On success
-// we set an httpOnly, booking-scoped cookie that authorizes the manage + chat endpoints
-// (including the SSE stream, which can only carry cookies).
+// View tier: a customer enters only their email. We return their active/upcoming bookings
+// (no Job ID, no numeric id — those stay secret) and set an email-scoped cookie that grants
+// read-only access. Managing a booking then requires the Job ID + an emailed code.
 export async function POST(request: NextRequest) {
   if (!rateLimit(`lookup:${getClientIp(request)}`, 10, 10 * 60 * 1000)) {
     return Response.json({ error: "Too many requests. Please try again later." }, { status: 429 });
@@ -38,23 +29,42 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const jobId = normalizeJobId(parsed.data.jobId);
-  const email = parsed.data.email.trim().toLowerCase();
+  const email = normalizeEmail(parsed.data.email);
 
-  const [booking] = await db.select().from(bookings).where(eq(bookings.jobId, jobId));
+  const rows = await db
+    .select({
+      token: bookings.confirmationToken,
+      serviceName: services.name,
+      appointmentDate: bookings.appointmentDate,
+      appointmentTime: bookings.appointmentTime,
+      dropoffWindow: bookings.dropoffWindow,
+      status: bookings.status,
+    })
+    .from(bookings)
+    .innerJoin(services, eq(bookings.serviceId, services.id))
+    .where(
+      and(
+        // Emails are stored as the customer entered them (mixed case possible), so match
+        // case-insensitively against the normalized (lowercased) input.
+        eq(sql`lower(${bookings.customerEmail})`, email),
+        ne(bookings.status, "cancelled"),
+        gte(bookings.appointmentDate, todayStr()),
+      ),
+    )
+    .orderBy(asc(bookings.appointmentDate));
 
-  // Single generic failure for both unknown Job ID and wrong email — no enumeration oracle.
-  const emailMatches = booking ? safeEqual(booking.customerEmail.trim().toLowerCase(), email) : false;
-  if (!booking || !emailMatches) {
+  // Generic failure — same shape whether the email is unknown or simply has no upcoming
+  // bookings. (Email-only lookup is inherently an enumeration oracle by product choice.)
+  if (rows.length === 0) {
     return Response.json(
-      { error: "We couldn't find a booking matching that Job ID and email." },
+      { error: "No upcoming bookings found for that email." },
       { status: 404 },
     );
   }
 
-  const token = issueCustomerToken(booking.id);
+  const token = issueViewToken(email);
   return Response.json(
-    { jobId },
-    { status: 200, headers: { "Set-Cookie": customerCookieHeader(token) } },
+    { bookings: rows.map((r) => ({ ...r, appointmentTime: r.appointmentTime.slice(0, 5) })) },
+    { status: 200, headers: { "Set-Cookie": viewCookieHeader(token) } },
   );
 }

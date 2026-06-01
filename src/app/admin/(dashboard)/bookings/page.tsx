@@ -6,16 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
+import { dropoffSummary } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
-
-function formatTime(time: string): string {
-  const [h, m] = time.split(":");
-  const hour = parseInt(h);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-  return `${display}:${m} ${ampm}`;
-}
 
 const statusColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   pending: "outline",
@@ -44,6 +37,7 @@ export default async function AdminBookingsPage({
       vehicleModel: bookings.vehicleModel,
       appointmentDate: bookings.appointmentDate,
       appointmentTime: bookings.appointmentTime,
+      dropoffWindow: bookings.dropoffWindow,
       status: bookings.status,
       createdAt: bookings.createdAt,
     })
@@ -84,7 +78,7 @@ export default async function AdminBookingsPage({
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Time</TableHead>
+                <TableHead>Drop-off</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Service</TableHead>
                 <TableHead>Vehicle</TableHead>
@@ -107,7 +101,7 @@ export default async function AdminBookingsPage({
                         {new Date(b.appointmentDate + "T00:00:00").toLocaleDateString()}
                       </Link>
                     </TableCell>
-                    <TableCell>{formatTime(b.appointmentTime)}</TableCell>
+                    <TableCell>{dropoffSummary(b.dropoffWindow, b.appointmentTime)}</TableCell>
                     <TableCell>
                       <div>
                         <p className="font-medium">{b.customerName}</p>

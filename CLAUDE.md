@@ -64,8 +64,8 @@ Uses **Drizzle ORM**. The connection (`src/db/index.ts`) switches on `DB_HOST`:
 | Table | Purpose |
 |---|---|
 | `services` | Bookable services (name, description, durationMins, priceCents, isActive, sortOrder) |
-| `bookings` | Customer bookings — FKs `services`; customer + vehicle details, appointment date/time, status, notes |
-| `business_hours` | Per-weekday open/close times and open flag |
+| `bookings` | Customer bookings — FKs `services`; customer + vehicle details, appointment date, `dropoffWindow` (`morning`/`evening`) + the window's resolved start time (`appointmentTime`), status, notes |
+| `business_hours` | Per-weekday schedule: `isOpen` flag plus two drop-off windows (morning/evening, each an enabled flag + start/end). Legacy `openTime`/`closeTime` columns remain but are unused. |
 | `blocked_dates` | Dates the shop is unavailable |
 | `admin_settings` | Key/value store (admin password hash, business name, etc.) |
 
@@ -79,6 +79,14 @@ Uses **Drizzle ORM**. The connection (`src/db/index.ts`) switches on `DB_HOST`:
 
 Older service tiers were **deactivated, not deleted** (`npm run db:cleanup-services` sets `isActive=false` for non "Full Detail" rows) because `bookings.serviceId` references `services` — deleting them would orphan historical bookings.
 
+## Availability (drop-off windows)
+
+Customers don't pick an arbitrary time — they pick one of two fixed **drop-off windows** per day (`src/lib/availability.ts`):
+- **Mon–Fri:** Morning (default 7–9 AM) and Evening (default 3–5 PM). **Saturday:** morning only. **Sunday:** closed. Which windows a day offers, and their times, are **admin-editable per weekday** in the Schedule manager (`PUT /api/schedule/hours`) — the model is fully data-driven from `business_hours`, no day-of-week special-casing in code.
+- `getWindowOptions(date)` → `WindowOption[]` (`{ key, label, startTime, endTime, available }`) backs `GET /api/availability?date=` and the booking/reschedule pickers (`src/components/window-picker.tsx`).
+- **One car per window.** Each `(date, dropoffWindow)` holds at most one non-cancelled booking, enforced by `isWindowAvailable` inside the per-day advisory-lock transaction (the authoritative check on create + reschedule) and backstopped by a partial unique index `bookings_date_window_active_idx`.
+- The customer sends only `dropoffWindow`; the server resolves the window's **start time** from `business_hours` and stores it in `bookings.appointmentTime` (so display/email code keeps rendering a concrete time). The explicit `bookings.dropoffWindow` column keeps the one-per-window check correct even if an admin later edits the window times. Window/time presentation helpers live in `src/lib/format.ts` (`formatTime`, `windowLabel`, `dropoffSummary`, `windowRange`).
+
 ## Admin / Auth
 
 The `/admin` dashboard is guarded by **NextAuth** (`src/lib/auth.ts`) using a single-credential (password-only) provider. The password is bcrypt-compared against the `admin_password_hash` row in `admin_settings`. Sign-in page is `/admin/login`; sessions are JWT (24h). The seeded default password is `admin123` (change it). Password changes go through `POST /api/admin/password`. Requires `NEXTAUTH_SECRET` and `NEXTAUTH_URL` in production.
@@ -88,7 +96,7 @@ The `/admin` dashboard is guarded by **NextAuth** (`src/lib/auth.ts`) using a si
 Every booking has a short, unguessable **Job ID** (`bookings.jobId`, Crockford base32, 8 chars; generated in `src/lib/job-id.ts`, shown on the confirmation page and in emails). Customers self-serve without an account:
 
 - **Lookup** (`/lookup` → `POST /api/bookings/lookup`): Job ID **+ the email on the booking** (two factors, timing-safe compare, rate-limited, single generic failure to avoid enumeration). On success it sets an httpOnly, **booking-scoped** signed cookie (`cust_session`, HMAC via `src/lib/customer-session.ts`, 2h). That cookie — not an admin login — authorizes the customer area.
-- **Customer area** (`/booking/[jobId]`, cookie-gated): reschedule / cancel / edit contact+vehicle via `POST /api/bookings/[jobId]/manage` (reuses the advisory-lock + `isSlotAvailable` reschedule path), plus a live chat. Customer mutations are **POST** because `middleware.ts` reserves `PATCH`/`DELETE` on `/api/bookings/*` for admins.
+- **Customer area** (`/booking/[jobId]`, cookie-gated): reschedule / cancel / edit contact+vehicle via `POST /api/bookings/[jobId]/manage` (reuses the advisory-lock + `isWindowAvailable` reschedule path), plus a live chat. Customer mutations are **POST** because `middleware.ts` reserves `PATCH`/`DELETE` on `/api/bookings/*` for admins.
 - **Chat** is two-way and **encrypted at rest** (AES-256-GCM, `src/lib/crypto.ts`, key `MESSAGE_ENCRYPTION_KEY`). Messages live in `booking_messages` (ciphertext/iv/authTag). Real-time delivery is **SSE** (`src/lib/sse.ts`) over an **in-process** pub/sub (`src/lib/chat-bus.ts`) — single-replica only; swap for Redis pub/sub if ever scaled. The owner reads/replies on the admin **Messages** board (`/admin/messages`), gets an email when a customer messages (reply-to the customer), and customer-facing replies email the customer (best-effort, env-gated).
 
 **`MESSAGE_ENCRYPTION_KEY`**: 32-byte base64 key (`openssl rand -base64 32`). Set in production via the `app-secrets` Secret; unset locally derives an insecure dev key (zero-config dev/test). **Rotating it makes prior ciphertext undecryptable** (no key-versioning) — decrypt is wrapped in try/catch so a bad/rotated row degrades to a placeholder instead of crashing the thread. It is **not** end-to-end: the server holds the key to render messages in admin and include snippets in emails.

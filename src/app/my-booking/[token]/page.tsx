@@ -7,39 +7,31 @@ import { eq } from "drizzle-orm";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDuration } from "@/lib/utils";
+import { dropoffSummary } from "@/lib/format";
 import { getBusinessInfo } from "@/lib/business-info";
-import { formatJobId, normalizeJobId } from "@/lib/job-id";
-import { CUSTOMER_COOKIE, verifyCustomerToken } from "@/lib/customer-session";
-import { ManagePanel } from "@/components/customer/manage-panel";
-import { ChatBox } from "@/components/chat/chat-box";
+import { VIEW_COOKIE, verifyViewToken, normalizeEmail } from "@/lib/customer-session";
+import { UnlockPanel } from "@/components/customer/unlock-panel";
 
 export const dynamic = "force-dynamic";
 
-function formatTime(time: string): string {
-  const [h, m] = time.split(":");
-  const hour = parseInt(h);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-  return `${display}:${m} ${ampm}`;
-}
-
-export default async function CustomerBookingPage({
+// Read-only booking view, reached via the opaque confirmation token (never the Job ID). Gated
+// by the email-scoped view cookie set at lookup. The Job ID is deliberately not exposed here —
+// the customer must supply it (plus an emailed code) to unlock managing the booking.
+export default async function CustomerBookingViewPage({
   params,
 }: {
-  params: { jobId: string };
+  params: { token: string };
 }) {
-  const jobId = normalizeJobId(params.jobId);
-
   const [booking] = await db
     .select({
       id: bookings.id,
-      jobId: bookings.jobId,
       serviceId: bookings.serviceId,
       serviceName: services.name,
       priceCents: services.priceCents,
       durationMins: services.durationMins,
       appointmentDate: bookings.appointmentDate,
       appointmentTime: bookings.appointmentTime,
+      dropoffWindow: bookings.dropoffWindow,
       status: bookings.status,
       customerName: bookings.customerName,
       customerEmail: bookings.customerEmail,
@@ -50,11 +42,11 @@ export default async function CustomerBookingPage({
     })
     .from(bookings)
     .innerJoin(services, eq(bookings.serviceId, services.id))
-    .where(eq(bookings.jobId, jobId));
+    .where(eq(bookings.confirmationToken, params.token));
 
-  // Gate on the booking-scoped cookie set at lookup. No cookie / wrong booking → re-auth.
-  const session = verifyCustomerToken(cookies().get(CUSTOMER_COOKIE)?.value);
-  if (!booking || !session || session.bookingId !== booking.id) {
+  // Gate on the email-scoped view cookie whose email matches this booking. Otherwise re-auth.
+  const session = verifyViewToken(cookies().get(VIEW_COOKIE)?.value);
+  if (!booking || !session || session.email !== normalizeEmail(booking.customerEmail)) {
     redirect("/lookup");
   }
 
@@ -82,14 +74,12 @@ export default async function CustomerBookingPage({
           <div>
             <h1 className="mb-1 text-3xl font-bold text-foreground">Your booking</h1>
             <p className="text-muted-foreground">
-              Job ID <span className="font-medium">{formatJobId(booking.jobId)}</span> · Status{" "}
-              <span className="font-medium capitalize">{booking.status}</span>
+              Status <span className="font-medium capitalize">{booking.status}</span>
             </p>
           </div>
 
           <Card>
             <CardContent className="space-y-3 p-6 text-left">
-              <Row label="Booking #" value={String(booking.id)} />
               <Row label="Service" value={booking.serviceName} />
               <Row label="Price" value={formatCurrency(booking.priceCents)} />
               <Row
@@ -101,7 +91,7 @@ export default async function CustomerBookingPage({
                   year: "numeric",
                 })}
               />
-              <Row label="Time" value={formatTime(apptTime)} />
+              <Row label="Drop-off" value={dropoffSummary(booking.dropoffWindow, apptTime)} />
               <Row label="Duration" value={formatDuration(booking.durationMins)} />
               <hr />
               <Row
@@ -111,37 +101,20 @@ export default async function CustomerBookingPage({
             </CardContent>
           </Card>
 
-          <section>
-            <h2 className="mb-3 text-xl font-semibold text-foreground">Manage</h2>
-            <ManagePanel
-              booking={{
-                jobId: booking.jobId ?? jobId,
-                serviceId: booking.serviceId,
-                status: booking.status,
-                appointmentDate: booking.appointmentDate,
-                appointmentTime: apptTime,
-                customerName: booking.customerName,
-                customerEmail: booking.customerEmail,
-                customerPhone: booking.customerPhone,
-                vehicleYear: booking.vehicleYear,
-                vehicleMake: booking.vehicleMake,
-                vehicleModel: booking.vehicleModel,
-              }}
-            />
-          </section>
-
-          <section>
-            <h2 className="mb-3 text-xl font-semibold text-foreground">Messages</h2>
-            <p className="mb-3 text-sm text-muted-foreground">
-              Questions about your appointment? Message us here — we&apos;ll reply in real time.
-            </p>
-            <ChatBox
-              self="customer"
-              historyUrl={`/api/bookings/${jobId}/messages`}
-              sendUrl={`/api/bookings/${jobId}/messages`}
-              streamUrl={`/api/bookings/${jobId}/messages/stream`}
-            />
-          </section>
+          <UnlockPanel
+            booking={{
+              serviceId: booking.serviceId,
+              status: booking.status,
+              appointmentDate: booking.appointmentDate,
+              appointmentTime: apptTime,
+              customerName: booking.customerName,
+              customerEmail: booking.customerEmail,
+              customerPhone: booking.customerPhone,
+              vehicleYear: booking.vehicleYear,
+              vehicleMake: booking.vehicleMake,
+              vehicleModel: booking.vehicleModel,
+            }}
+          />
 
           <div className="flex justify-center">
             <Button asChild variant="outline">

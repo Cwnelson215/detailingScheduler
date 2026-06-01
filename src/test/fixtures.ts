@@ -7,11 +7,12 @@ import { services, bookings, bookingMessages, blockedDates, businessHours } from
 import { encryptMessage } from "@/lib/crypto";
 
 // Wipe per-test data and reset identity sequences (so IDs are predictable per test).
-// business_hours is left intact — runMigrations seeds one row per weekday (Mon–Fri
-// 08:00–17:00, Sat 09:00–14:00, Sun closed); use setHours() to override a day.
+// business_hours is left intact — runMigrations seeds one row per weekday: Mon–Fri offer
+// the morning (07:00–09:00) and evening (15:00–17:00) drop-off windows, Saturday is
+// morning-only, Sunday is closed; use setHours() to override a day.
 export async function resetDb(): Promise<void> {
   await db.execute(
-    sql`TRUNCATE booking_messages, bookings, services, blocked_dates RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE customer_verification_codes, booking_messages, bookings, services, blocked_dates RESTART IDENTITY CASCADE`,
   );
 }
 
@@ -29,8 +30,10 @@ export async function seedService(overrides: Partial<typeof services.$inferInser
 }
 
 type BookingOverrides = Partial<typeof bookings.$inferInsert> &
-  Pick<typeof bookings.$inferInsert, "serviceId" | "appointmentDate" | "appointmentTime">;
+  Pick<typeof bookings.$inferInsert, "serviceId" | "appointmentDate">;
 
+// appointmentTime + dropoffWindow default to the morning window; pass dropoffWindow
+// (and optionally a matching appointmentTime) to seed an evening booking.
 export async function seedBooking(overrides: BookingOverrides) {
   const [row] = await db
     .insert(bookings)
@@ -42,6 +45,8 @@ export async function seedBooking(overrides: BookingOverrides) {
       vehicleMake: "Toyota",
       vehicleModel: "Camry",
       status: "pending",
+      appointmentTime: "07:00",
+      dropoffWindow: "morning",
       ...overrides,
     })
     .returning();
@@ -65,9 +70,11 @@ export async function blockDate(date: string, reason = ""): Promise<void> {
   await db.insert(blockedDates).values({ date, reason });
 }
 
+// Override a weekday's schedule. Pass only the fields a test cares about, e.g.
+// setHours(6, { eveningEnabled: false }) or setHours(0, { isOpen: false }).
 export async function setHours(
   dayOfWeek: number,
-  opts: { openTime: string | null; closeTime: string | null; isOpen: boolean },
+  opts: Partial<typeof businessHours.$inferInsert>,
 ): Promise<void> {
   await db.update(businessHours).set(opts).where(eq(businessHours.dayOfWeek, dayOfWeek));
 }

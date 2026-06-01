@@ -27,9 +27,20 @@ export const services = pgTable("services", {
 export const businessHours = pgTable("business_hours", {
   id: serial("id").primaryKey(),
   dayOfWeek: integer("day_of_week").notNull(), // 0=Sunday, 6=Saturday
+  // Deprecated: the legacy open→close model. Kept so the additive migration is reversible
+  // and old data isn't lost, but no longer read — availability now uses the window columns.
   openTime: time("open_time"),
   closeTime: time("close_time"),
+  // Whole-day master switch. A day is closed (no drop-off windows) when this is false.
   isOpen: boolean("is_open").notNull().default(true),
+  // Two fixed drop-off windows per day. A window is offered to customers only when its
+  // *_enabled flag is set and its start/end are populated. Saturday = morning only, etc.
+  morningEnabled: boolean("morning_enabled").notNull().default(true),
+  morningStart: time("morning_start"),
+  morningEnd: time("morning_end"),
+  eveningEnabled: boolean("evening_enabled").notNull().default(false),
+  eveningStart: time("evening_start"),
+  eveningEnd: time("evening_end"),
 });
 
 export const blockedDates = pgTable("blocked_dates", {
@@ -52,7 +63,13 @@ export const bookings = pgTable(
     vehicleMake: varchar("vehicle_make", { length: 100 }).notNull(),
     vehicleModel: varchar("vehicle_model", { length: 100 }).notNull(),
     appointmentDate: date("appointment_date").notNull(),
+    // The window's start time, resolved server-side from business_hours at booking time.
+    // Kept populated so existing display/email code keeps rendering a concrete time.
     appointmentTime: time("appointment_time").notNull(),
+    // Which fixed drop-off window this booking occupies. The explicit column (rather than
+    // inferring from appointmentTime) keeps the one-car-per-window check correct even if
+    // the admin later edits a window's times.
+    dropoffWindow: varchar("dropoff_window", { length: 10 }).notNull().$type<"morning" | "evening">(),
     status: varchar("status", { length: 20 }).notNull().default("pending"),
     notes: text("notes").default(""),
     // Unguessable handle for customer-facing confirmation/manage links, so those
@@ -93,6 +110,28 @@ export const bookingMessages = pgTable(
   },
   (t) => ({
     bookingIdIdx: index("booking_messages_booking_id_idx").on(t.bookingId),
+  }),
+);
+
+// One-time codes that step a customer up from the email-only "view" tier to the manage
+// tier. Issued when a customer enters their Job ID on the view page; emailed to the booking's
+// address. Stored hashed (never plaintext), single-use, time-boxed, attempt-limited.
+export const customerVerificationCodes = pgTable(
+  "customer_verification_codes",
+  {
+    id: serial("id").primaryKey(),
+    bookingId: integer("booking_id")
+      .notNull()
+      .references(() => bookings.id),
+    // SHA-256 hex of the 6-digit code — we never persist the code itself.
+    codeHash: varchar("code_hash", { length: 64 }).notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    consumedAt: timestamp("consumed_at"),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    bookingIdIdx: index("customer_verification_codes_booking_id_idx").on(t.bookingId),
   }),
 );
 

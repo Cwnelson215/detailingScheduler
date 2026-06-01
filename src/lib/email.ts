@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { services } from "@/db/schema";
 import { formatCurrency, formatDuration } from "./utils";
+import { dropoffSummary, windowName, type DropoffWindow } from "./format";
 import { getBusinessInfo } from "./business-info";
 
 type ContactMessageInput = {
@@ -25,6 +26,7 @@ type BookingEmailInput = {
   vehicleModel: string;
   appointmentDate: string;
   appointmentTime: string;
+  dropoffWindow: DropoffWindow;
   manageUrl?: string;
 };
 
@@ -45,14 +47,6 @@ function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function formatTime(time: string): string {
-  const [h, m] = time.split(":");
-  const hour = parseInt(h);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-  return `${display}:${m} ${ampm}`;
 }
 
 function formatDate(date: string): string {
@@ -85,7 +79,7 @@ function bookingRows(b: BookingEmailInput): [string, string][] {
     ["Service", b.serviceName],
     ["Price", formatCurrency(b.priceCents)],
     ["Date", formatDate(b.appointmentDate)],
-    ["Time", formatTime(b.appointmentTime)],
+    ["Drop-off", dropoffSummary(b.dropoffWindow, b.appointmentTime)],
     ["Duration", formatDuration(b.durationMins)],
     ["Vehicle", `${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`],
   ];
@@ -98,7 +92,7 @@ function renderHtml(b: BookingEmailInput): string {
   <p style="color:#555;margin-top:0;">Thanks ${escapeHtml(b.customerName)} — your appointment is on the books.</p>
   ${tableHtml(bookingRows(b))}
   ${b.manageUrl ? `<p style="color:#555;margin-top:24px;">Need to make a change? <a href="${b.manageUrl}">Manage your booking</a>.</p>` : ""}
-  ${b.jobId ? `<p style="color:#555;margin-top:8px;">Or look it up anytime with your Job ID <strong>${escapeHtml(b.jobId)}</strong> and this email address at <a href="${siteUrl()}/lookup">${siteUrl()}/lookup</a> — where you can also reschedule, cancel, or message us directly.</p>` : ""}
+  ${b.jobId ? `<p style="color:#555;margin-top:8px;">Look up your booking anytime with this email at <a href="${siteUrl()}/lookup">${siteUrl()}/lookup</a>. To reschedule, cancel, or message us, you'll enter your Job ID <strong>${escapeHtml(b.jobId)}</strong> and a code we email you — so keep this Job ID handy.</p>` : ""}
   <p style="color:#555;margin-top:24px;">We'll reach out at ${escapeHtml(b.customerPhone)} if anything changes. Reply to this email with questions.</p>
 </body></html>`;
 }
@@ -113,13 +107,17 @@ function renderText(b: BookingEmailInput): string {
     `Service:   ${b.serviceName}`,
     `Price:     ${formatCurrency(b.priceCents)}`,
     `Date:      ${formatDate(b.appointmentDate)}`,
-    `Time:      ${formatTime(b.appointmentTime)}`,
+    `Drop-off:  ${dropoffSummary(b.dropoffWindow, b.appointmentTime)}`,
     `Duration:  ${formatDuration(b.durationMins)}`,
     `Vehicle:   ${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`,
     ``,
     ...(b.manageUrl ? [`Manage your booking: ${b.manageUrl}`, ``] : []),
     ...(b.jobId
-      ? [`Or look it up with Job ID ${b.jobId} + this email at ${siteUrl()}/lookup`, ``]
+      ? [
+          `Look up your booking with this email at ${siteUrl()}/lookup`,
+          `To make changes or message us, you'll enter Job ID ${b.jobId} + a code we email you — keep it handy.`,
+          ``,
+        ]
       : []),
     `We'll reach out at ${b.customerPhone} if anything changes.`,
   ].join("\n");
@@ -148,7 +146,7 @@ function renderOwnerText(b: BookingEmailInput): string {
     `Service:   ${b.serviceName}`,
     `Price:     ${formatCurrency(b.priceCents)}`,
     `Date:      ${formatDate(b.appointmentDate)}`,
-    `Time:      ${formatTime(b.appointmentTime)}`,
+    `Drop-off:  ${dropoffSummary(b.dropoffWindow, b.appointmentTime)}`,
     `Duration:  ${formatDuration(b.durationMins)}`,
     `Vehicle:   ${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`,
     ``,
@@ -175,7 +173,7 @@ export async function sendBookingConfirmation(input: BookingEmailInput): Promise
     from,
     to: input.customerEmail,
     ...(replyTo ? { replyTo } : {}),
-    subject: `${businessName} — booking confirmed for ${formatDate(input.appointmentDate)} at ${formatTime(input.appointmentTime)}`,
+    subject: `${businessName} — booking confirmed for ${formatDate(input.appointmentDate)} (${windowName(input.dropoffWindow)} drop-off)`,
     html: renderHtml(input),
     text: renderText(input),
   });
@@ -240,6 +238,61 @@ export async function sendContactMessage(input: ContactMessageInput): Promise<vo
 
   if (error) {
     throw new Error(`Resend contact message failed: ${error.message}`);
+  }
+}
+
+// --- View→manage step-up code ---
+
+type VerificationCodeInput = {
+  customerEmail: string;
+  customerName: string;
+  code: string;
+};
+
+// Emails the one-time code that unlocks managing/messaging a booking. Skips gracefully when
+// Resend is unconfigured — and logs the code so local dev / tests (which never send mail)
+// can still complete the flow. The code is short-lived and single-use server-side.
+export async function sendVerificationCode(input: VerificationCodeInput): Promise<void> {
+  const resend = getResend();
+  if (!resend) {
+    console.log(
+      `[email] RESEND_API_KEY not set — verification code for ${input.customerEmail} is ${input.code}`,
+    );
+    return;
+  }
+
+  const { name: businessName } = await getBusinessInfo();
+  const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
+  const replyTo = process.env.EMAIL_REPLY_TO;
+
+  const html = `<!doctype html>
+<html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
+  <h1 style="font-size:22px;margin-bottom:4px;">Your verification code</h1>
+  <p style="color:#555;margin-top:0;">Hi ${escapeHtml(input.customerName)} — use this code to make changes to your booking:</p>
+  <p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:16px 0;">${escapeHtml(input.code)}</p>
+  <p style="color:#555;">This code is valid for 10 minutes. If you didn't request it, you can ignore this email.</p>
+</body></html>`;
+  const text = [
+    `Your verification code`,
+    ``,
+    `Hi ${input.customerName} — use this code to make changes to your booking:`,
+    ``,
+    input.code,
+    ``,
+    `This code is valid for 10 minutes. If you didn't request it, you can ignore this email.`,
+  ].join("\n");
+
+  const { error } = await resend.emails.send({
+    from,
+    to: input.customerEmail,
+    ...(replyTo ? { replyTo } : {}),
+    subject: `${businessName} — your verification code`,
+    html,
+    text,
+  });
+
+  if (error) {
+    throw new Error(`Resend verification code failed: ${error.message}`);
   }
 }
 
@@ -308,7 +361,7 @@ export async function sendBookingStatusUpdate(
     from,
     to: input.customerEmail,
     ...(replyTo ? { replyTo } : {}),
-    subject: `${businessName} — ${copy.subject} (${formatDate(input.appointmentDate)} at ${formatTime(input.appointmentTime)})`,
+    subject: `${businessName} — ${copy.subject} (${formatDate(input.appointmentDate)}, ${windowName(input.dropoffWindow)} drop-off)`,
     html,
     text,
   });
@@ -342,7 +395,7 @@ export async function sendOwnerNotification(input: BookingEmailInput): Promise<v
     from,
     to: notifyTo,
     replyTo: input.customerEmail,
-    subject: `${businessName} — new booking #${input.bookingId} for ${formatDate(input.appointmentDate)} at ${formatTime(input.appointmentTime)}`,
+    subject: `${businessName} — new booking #${input.bookingId} for ${formatDate(input.appointmentDate)} (${windowName(input.dropoffWindow)} drop-off)`,
     html: renderOwnerHtml(input),
     text: renderOwnerText(input),
   });
@@ -444,7 +497,7 @@ export async function sendOwnerReplyNotification(input: OwnerReplyNotifyInput): 
   <h1 style="font-size:22px;margin-bottom:4px;">New Reply from ${escapeHtml(businessName)}</h1>
   <p style="color:#555;margin-top:0;">Hi ${escapeHtml(input.customerName)} — we replied to your message:</p>
   <p style="color:#111;margin-top:16px;white-space:pre-line;border-left:3px solid #eee;padding-left:12px;">${escapeHtml(input.snippet)}</p>
-  <p style="color:#555;margin-top:24px;">View and reply with your Job ID <strong>${escapeHtml(input.jobId)}</strong> and this email at <a href="${threadUrl}">${threadUrl}</a>.</p>
+  <p style="color:#555;margin-top:24px;">Look up your booking with this email at <a href="${threadUrl}">${threadUrl}</a>. To reply, you'll enter your Job ID <strong>${escapeHtml(input.jobId)}</strong> and a code we email you.</p>
 </body></html>`;
   const text = [
     `New Reply from ${businessName}`,
@@ -453,7 +506,8 @@ export async function sendOwnerReplyNotification(input: OwnerReplyNotifyInput): 
     ``,
     input.snippet,
     ``,
-    `View and reply with Job ID ${input.jobId} + this email at ${threadUrl}`,
+    `Look up your booking with this email at ${threadUrl}`,
+    `To reply, you'll enter Job ID ${input.jobId} + a code we email you.`,
   ].join("\n");
 
   const { error } = await resend.emails.send({
@@ -484,6 +538,7 @@ type StatusNotifyBooking = {
   vehicleModel: string;
   appointmentDate: string;
   appointmentTime: string;
+  dropoffWindow: DropoffWindow;
 };
 
 export async function notifyBookingStatus(
@@ -516,6 +571,7 @@ export async function notifyBookingStatus(
         vehicleModel: booking.vehicleModel,
         appointmentDate: booking.appointmentDate,
         appointmentTime: booking.appointmentTime,
+        dropoffWindow: booking.dropoffWindow,
       },
       kind,
     );

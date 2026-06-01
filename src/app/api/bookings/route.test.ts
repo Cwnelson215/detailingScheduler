@@ -19,6 +19,7 @@ import { getServerSession } from "next-auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { bookings } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { resetDb, seedService, seedBooking, futureDateForWeekday } from "@/test/fixtures";
 
 const MONDAY = futureDateForWeekday(1);
@@ -42,7 +43,7 @@ function validBody(overrides: Record<string, unknown> = {}) {
     vehicleMake: "Toyota",
     vehicleModel: "Camry",
     appointmentDate: MONDAY,
-    appointmentTime: "09:00",
+    dropoffWindow: "morning",
     ...overrides,
   };
 }
@@ -56,12 +57,14 @@ beforeEach(async () => {
 });
 
 describe("POST /api/bookings", () => {
-  it("creates a booking on a free slot (201) and persists it", async () => {
+  it("creates a booking on a free window (201) and stores the resolved start time", async () => {
     const res = await POST(postReq(validBody()));
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.id).toBeDefined();
-    expect(await db.select().from(bookings)).toHaveLength(1);
+    const [row] = await db.select().from(bookings);
+    expect(row.dropoffWindow).toBe("morning");
+    expect(row.appointmentTime.slice(0, 5)).toBe("07:00"); // resolved from business_hours
   });
 
   it("rejects invalid input with 400 and saves nothing", async () => {
@@ -70,10 +73,23 @@ describe("POST /api/bookings", () => {
     expect(await db.select().from(bookings)).toHaveLength(0);
   });
 
-  it("returns 409 when the slot is already taken", async () => {
-    await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "09:00" });
+  it("rejects an unknown drop-off window with 400", async () => {
+    const res = await POST(postReq(validBody({ dropoffWindow: "afternoon" })));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 409 when that window is already taken", async () => {
+    await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
     const res = await POST(postReq(validBody()));
     expect(res.status).toBe(409);
+  });
+
+  it("still allows the evening window when morning is taken", async () => {
+    await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
+    const res = await POST(postReq(validBody({ dropoffWindow: "evening" })));
+    expect(res.status).toBe(201);
+    const [row] = await db.select().from(bookings).where(eq(bookings.dropoffWindow, "evening"));
+    expect(row.appointmentTime.slice(0, 5)).toBe("15:00");
   });
 
   it("returns 429 when rate-limited", async () => {

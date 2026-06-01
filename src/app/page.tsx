@@ -89,12 +89,20 @@ export default async function HomePage() {
             <a href="#included" className="transition-colors hover:text-foreground">What&apos;s included</a>
             <a href="#contact" className="transition-colors hover:text-foreground">Contact</a>
           </nav>
-          <Link
-            href="/booking"
-            className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Book Now
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/lookup"
+              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              My booking
+            </Link>
+            <Link
+              href="/booking"
+              className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Book Now
+            </Link>
+          </div>
         </div>
       </header>
 

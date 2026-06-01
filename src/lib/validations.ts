@@ -28,10 +28,14 @@ const appointmentDateField = z
   .refine(isRealCalendarDate, "Not a real calendar date")
   .refine(isNotInPast, "Date cannot be in the past");
 
-const appointmentTimeField = z
+const timeOfDayField = z
   .string()
   .regex(/^\d{2}:\d{2}$/, "Invalid time format")
   .refine(isRealTimeOfDay, "Not a valid time of day");
+
+// Customers pick a drop-off window, not a specific minute. The server resolves the actual
+// time from the day's business_hours, so the booking payload only carries the window key.
+export const dropoffWindowField = z.enum(["morning", "evening"]);
 
 export const bookingStatusValues = ["pending", "confirmed", "completed", "cancelled"] as const;
 
@@ -48,7 +52,7 @@ export const bookingSchema = z.object({
   vehicleMake: z.string().min(1, "Make is required").max(100),
   vehicleModel: z.string().min(1, "Model is required").max(100),
   appointmentDate: appointmentDateField,
-  appointmentTime: appointmentTimeField,
+  dropoffWindow: dropoffWindowField,
   notes: z.string().max(1000).optional().default(""),
 });
 
@@ -58,14 +62,20 @@ export const bookingUpdateSchema = z
     status: z.enum(bookingStatusValues).optional(),
     notes: z.string().max(1000).optional(),
     appointmentDate: appointmentDateField.optional(),
-    appointmentTime: appointmentTimeField.optional(),
+    dropoffWindow: dropoffWindowField.optional(),
   })
   .refine((d) => Object.keys(d).length > 0, "No valid fields to update");
 
-// Customer looks up a booking with the short Job ID + the email on file (two factors).
+// Customer looks up their bookings with just the email on file (view tier). Managing a
+// booking then requires the Job ID + an emailed code (see verifyCodeSchema).
 export const lookupSchema = z.object({
-  jobId: z.string().min(1, "Job ID is required").max(20),
   email: z.string().email("Invalid email address"),
+});
+
+// Step-up: the 6-digit one-time code emailed to the booking's address. The Job ID comes
+// from the request path, so it isn't part of this body.
+export const verifyCodeSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
 });
 
 // Customer self-service edits to their own booking. Unlike the admin bookingUpdateSchema
@@ -74,7 +84,7 @@ export const lookupSchema = z.object({
 export const customerManageSchema = z
   .object({
     appointmentDate: appointmentDateField.optional(),
-    appointmentTime: appointmentTimeField.optional(),
+    dropoffWindow: dropoffWindowField.optional(),
     customerName: z.string().min(1, "Name is required").max(255).optional(),
     customerEmail: z.string().email("Invalid email address").optional(),
     customerPhone: z
@@ -124,12 +134,33 @@ export const serviceUpdateSchema = z
   .partial()
   .refine((d) => Object.keys(d).length > 0, "No valid fields to update");
 
-export const businessHoursSchema = z.object({
-  dayOfWeek: z.number().int().min(0).max(6),
-  openTime: z.string().nullable(),
-  closeTime: z.string().nullable(),
-  isOpen: z.boolean(),
-});
+const windowTimeField = z
+  .string()
+  .regex(/^\d{2}:\d{2}$/, "Invalid time format")
+  .refine(isRealTimeOfDay, "Not a valid time of day")
+  .nullable();
+
+// Admin-edited per-weekday schedule: a master open flag plus two drop-off windows. An
+// enabled window must have both a start and an end, with start strictly before end.
+export const businessHoursSchema = z
+  .object({
+    dayOfWeek: z.number().int().min(0).max(6),
+    isOpen: z.boolean(),
+    morningEnabled: z.boolean(),
+    morningStart: windowTimeField,
+    morningEnd: windowTimeField,
+    eveningEnabled: z.boolean(),
+    eveningStart: windowTimeField,
+    eveningEnd: windowTimeField,
+  })
+  .refine((d) => !d.morningEnabled || (!!d.morningStart && !!d.morningEnd && d.morningStart < d.morningEnd), {
+    message: "Morning window needs a start before its end",
+    path: ["morningStart"],
+  })
+  .refine((d) => !d.eveningEnabled || (!!d.eveningStart && !!d.eveningEnd && d.eveningStart < d.eveningEnd), {
+    message: "Evening window needs a start before its end",
+    path: ["eveningStart"],
+  });
 
 export const businessInfoSchema = z.object({
   name: z.string().min(1, "Business name is required").max(255),

@@ -40,7 +40,7 @@ beforeEach(async () => {
   await resetDb();
   const svc = await seedService({ durationMins: 60 });
   serviceId = svc.id;
-  const b = await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "09:00" });
+  const b = await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
   jobId = b.jobId!;
   bookingId = b.id;
   token = issueCustomerToken(bookingId);
@@ -66,16 +66,17 @@ describe("POST /api/jobs/[jobId]/manage", () => {
     expect(row.status).toBe("cancelled");
   });
 
-  it("reschedules into a free slot", async () => {
-    const res = await POST(req(jobId, { appointmentTime: "11:00" }, token), { params: { jobId } });
+  it("reschedules into a free window", async () => {
+    const res = await POST(req(jobId, { dropoffWindow: "evening" }, token), { params: { jobId } });
     expect(res.status).toBe(200);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
-    expect(row.appointmentTime.slice(0, 5)).toBe("11:00");
+    expect(row.dropoffWindow).toBe("evening");
+    expect(row.appointmentTime.slice(0, 5)).toBe("15:00");
   });
 
-  it("409 when rescheduling onto a taken slot", async () => {
-    await seedBooking({ serviceId, appointmentDate: MONDAY, appointmentTime: "11:00" });
-    const res = await POST(req(jobId, { appointmentTime: "11:00" }, token), { params: { jobId } });
+  it("409 when rescheduling onto a taken window", async () => {
+    await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "evening", appointmentTime: "15:00" });
+    const res = await POST(req(jobId, { dropoffWindow: "evening" }, token), { params: { jobId } });
     expect(res.status).toBe(409);
   });
 

@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPicker } from "@/components/calendar-picker";
-import { TimeSlotPicker } from "@/components/time-slot-picker";
+import { WindowPicker } from "@/components/window-picker";
+import { type DropoffWindow, type WindowOption } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,6 @@ type BookingView = {
   vehicleModel: string;
 };
 
-type TimeSlot = { time: string; available: boolean };
 type Mode = "none" | "reschedule" | "edit";
 
 export function ManagePanel({ booking }: { booking: BookingView }) {
@@ -32,7 +32,7 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
   const [error, setError] = useState("");
 
   const active = booking.status !== "cancelled" && booking.status !== "completed";
-  const manageUrl = `/api/bookings/${booking.jobId}/manage`;
+  const manageUrl = `/api/jobs/${booking.jobId}/manage`;
 
   async function post(payload: Record<string, unknown>): Promise<boolean> {
     setBusy(true);
@@ -93,10 +93,9 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
 
       {mode === "reschedule" && (
         <RescheduleForm
-          booking={booking}
           busy={busy}
           onCancel={() => setMode("none")}
-          onSubmit={(appointmentDate, appointmentTime) => post({ appointmentDate, appointmentTime })}
+          onSubmit={(appointmentDate, dropoffWindow) => post({ appointmentDate, dropoffWindow })}
         />
       )}
 
@@ -115,44 +114,42 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
 }
 
 function RescheduleForm({
-  booking,
   busy,
   onCancel,
   onSubmit,
 }: {
-  booking: BookingView;
   busy: boolean;
   onCancel: () => void;
-  onSubmit: (date: string, time: string) => Promise<boolean>;
+  onSubmit: (date: string, window: DropoffWindow) => Promise<boolean>;
 }) {
   const [date, setDate] = useState("");
-  const [slots, setSlots] = useState<TimeSlot[]>([]);
-  const [time, setTime] = useState("");
+  const [options, setOptions] = useState<WindowOption[]>([]);
+  const [window, setWindow] = useState<DropoffWindow | "">("");
   const [loadingSlots, setLoadingSlots] = useState(false);
 
   useEffect(() => {
     if (!date) return;
     setLoadingSlots(true);
-    setTime("");
-    fetch(`/api/availability?date=${date}&serviceId=${booking.serviceId}`)
+    setWindow("");
+    fetch(`/api/availability?date=${date}`)
       .then((r) => r.json())
-      .then((d: TimeSlot[]) => setSlots(Array.isArray(d) ? d : []))
-      .catch(() => setSlots([]))
+      .then((d: WindowOption[]) => setOptions(Array.isArray(d) ? d : []))
+      .catch(() => setOptions([]))
       .finally(() => setLoadingSlots(false));
-  }, [date, booking.serviceId]);
+  }, [date]);
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Pick a new date and time.</p>
+      <p className="text-sm text-muted-foreground">Pick a new date and drop-off window.</p>
       <CalendarPicker selected={date} onSelect={setDate} />
       {date &&
         (loadingSlots ? (
-          <p className="text-sm text-muted-foreground">Loading times...</p>
+          <p className="text-sm text-muted-foreground">Loading windows...</p>
         ) : (
-          <TimeSlotPicker slots={slots} selected={time} onSelect={setTime} />
+          <WindowPicker options={options} selected={window} onSelect={setWindow} />
         ))}
       <div className="flex gap-3">
-        <Button disabled={!date || !time || busy} onClick={() => date && time && onSubmit(date, time)}>
+        <Button disabled={!date || !window || busy} onClick={() => date && window && onSubmit(date, window)}>
           {busy ? "Saving..." : "Confirm reschedule"}
         </Button>
         <Button variant="outline" onClick={onCancel} disabled={busy}>

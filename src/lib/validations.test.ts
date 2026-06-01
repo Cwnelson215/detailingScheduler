@@ -23,7 +23,7 @@ const base = {
   vehicleYear: "2020",
   vehicleMake: "Toyota",
   vehicleModel: "Camry",
-  appointmentTime: "09:00",
+  dropoffWindow: "morning",
 };
 
 describe("bookingSchema", () => {
@@ -36,9 +36,9 @@ describe("bookingSchema", () => {
   it("rejects a past date", () => {
     expect(bookingSchema.safeParse({ ...base, appointmentDate: "2000-01-01" }).success).toBe(false);
   });
-  it("rejects an impossible time of day", () => {
+  it("rejects an unknown drop-off window", () => {
     expect(
-      bookingSchema.safeParse({ ...base, appointmentDate: futureDate(), appointmentTime: "25:99" }).success,
+      bookingSchema.safeParse({ ...base, appointmentDate: futureDate(), dropoffWindow: "afternoon" }).success,
     ).toBe(false);
   });
   it("rejects a phone number with too few digits", () => {
@@ -98,29 +98,41 @@ describe("serviceUpdateSchema", () => {
 });
 
 describe("businessHoursSchema", () => {
-  it("accepts an open day", () =>
-    expect(
-      businessHoursSchema.safeParse({
-        dayOfWeek: 1,
-        openTime: "08:00",
-        closeTime: "17:00",
-        isOpen: true,
-      }).success,
-    ).toBe(true));
-  it("accepts a closed day with null times", () =>
+  const weekday = {
+    dayOfWeek: 1,
+    isOpen: true,
+    morningEnabled: true,
+    morningStart: "07:00",
+    morningEnd: "09:00",
+    eveningEnabled: true,
+    eveningStart: "15:00",
+    eveningEnd: "17:00",
+  };
+  it("accepts a day with valid windows", () =>
+    expect(businessHoursSchema.safeParse(weekday).success).toBe(true));
+  it("accepts a closed day with disabled, null windows", () =>
     expect(
       businessHoursSchema.safeParse({
         dayOfWeek: 0,
-        openTime: null,
-        closeTime: null,
         isOpen: false,
+        morningEnabled: false,
+        morningStart: null,
+        morningEnd: null,
+        eveningEnabled: false,
+        eveningStart: null,
+        eveningEnd: null,
       }).success,
     ).toBe(true));
-  it("rejects an out-of-range dayOfWeek", () =>
+  it("rejects an enabled window with start at or after its end", () =>
     expect(
-      businessHoursSchema.safeParse({ dayOfWeek: 7, openTime: null, closeTime: null, isOpen: false })
-        .success,
+      businessHoursSchema.safeParse({ ...weekday, morningStart: "09:00", morningEnd: "09:00" }).success,
     ).toBe(false));
+  it("rejects an enabled window missing its times", () =>
+    expect(
+      businessHoursSchema.safeParse({ ...weekday, eveningStart: null, eveningEnd: null }).success,
+    ).toBe(false));
+  it("rejects an out-of-range dayOfWeek", () =>
+    expect(businessHoursSchema.safeParse({ ...weekday, dayOfWeek: 7 }).success).toBe(false));
 });
 
 describe("changePasswordSchema", () => {

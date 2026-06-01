@@ -5,19 +5,12 @@ import { eq } from "drizzle-orm";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDuration } from "@/lib/utils";
+import { dropoffSummary } from "@/lib/format";
 import { getBusinessInfo } from "@/lib/business-info";
 import { formatJobId } from "@/lib/job-id";
 import { ManageActions } from "@/components/manage-actions";
 
 export const dynamic = "force-dynamic";
-
-function formatTime(time: string): string {
-  const [h, m] = time.split(":");
-  const hour = parseInt(h);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-  return `${display}:${m} ${ampm}`;
-}
 
 export default async function ManageBookingPage({
   searchParams,
@@ -37,6 +30,7 @@ export default async function ManageBookingPage({
           durationMins: services.durationMins,
           appointmentDate: bookings.appointmentDate,
           appointmentTime: bookings.appointmentTime,
+          dropoffWindow: bookings.dropoffWindow,
           vehicleYear: bookings.vehicleYear,
           vehicleMake: bookings.vehicleMake,
           vehicleModel: bookings.vehicleModel,
@@ -114,8 +108,8 @@ export default async function ManageBookingPage({
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Time</span>
-                    <span className="font-medium">{formatTime(booking.appointmentTime)}</span>
+                    <span className="text-muted-foreground">Drop-off</span>
+                    <span className="font-medium">{dropoffSummary(booking.dropoffWindow, booking.appointmentTime)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Duration</span>

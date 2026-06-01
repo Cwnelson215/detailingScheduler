@@ -7,18 +7,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle } from "lucide-react";
 import { formatCurrency, formatDuration } from "@/lib/utils";
+import { dropoffSummary } from "@/lib/format";
 import { getBusinessInfo } from "@/lib/business-info";
 import { formatJobId } from "@/lib/job-id";
 
 export const dynamic = "force-dynamic";
-
-function formatTime(time: string): string {
-  const [h, m] = time.split(":");
-  const hour = parseInt(h);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-  return `${display}:${m} ${ampm}`;
-}
 
 export default async function ConfirmationPage({
   searchParams,
@@ -42,6 +35,7 @@ export default async function ConfirmationPage({
       vehicleModel: bookings.vehicleModel,
       appointmentDate: bookings.appointmentDate,
       appointmentTime: bookings.appointmentTime,
+      dropoffWindow: bookings.dropoffWindow,
       status: bookings.status,
     })
     .from(bookings)
@@ -108,8 +102,8 @@ export default async function ConfirmationPage({
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Time</span>
-                <span className="font-medium">{formatTime(booking.appointmentTime)}</span>
+                <span className="text-muted-foreground">Drop-off</span>
+                <span className="font-medium">{dropoffSummary(booking.dropoffWindow, booking.appointmentTime)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Duration</span>
@@ -135,12 +129,12 @@ export default async function ConfirmationPage({
           </p>
 
           <p className="mx-auto mt-4 max-w-md text-sm text-muted-foreground">
-            Need to reschedule, cancel, or message us? Look up your booking anytime with your
-            Job ID and email at{" "}
+            Look up your booking anytime with your email at{" "}
             <Link href="/lookup" className="font-medium text-primary hover:underline">
               {info.name} / lookup
             </Link>
-            .
+            . To reschedule, cancel, or message us, you&apos;ll confirm your Job ID (above) with a
+            one-time code we email you — so keep this Job ID handy.
           </p>
 
           <div className="mt-8 flex gap-4 justify-center">

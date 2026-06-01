@@ -32,9 +32,13 @@ export async function PUT(request: NextRequest) {
     await db
       .update(businessHours)
       .set({
-        openTime: item.openTime,
-        closeTime: item.closeTime,
         isOpen: item.isOpen,
+        morningEnabled: item.morningEnabled,
+        morningStart: item.morningStart,
+        morningEnd: item.morningEnd,
+        eveningEnabled: item.eveningEnabled,
+        eveningStart: item.eveningStart,
+        eveningEnd: item.eveningEnd,
       })
       .where(eq(businessHours.dayOfWeek, item.dayOfWeek));
   }

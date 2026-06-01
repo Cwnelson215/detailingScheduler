@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { bookings } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { bookingUpdateSchema } from "@/lib/validations";
-import { isSlotAvailable } from "@/lib/availability";
+import { isWindowAvailable } from "@/lib/availability";
 import { notifyBookingStatus } from "@/lib/email";
 import { requireAdmin } from "@/lib/require-admin";
 
@@ -34,30 +34,30 @@ export async function PATCH(
   }
 
   const targetDate = updates.appointmentDate ?? existing.appointmentDate;
-  const targetTime = updates.appointmentTime ?? existing.appointmentTime.slice(0, 5);
+  const targetWindow = updates.dropoffWindow ?? existing.dropoffWindow;
   const isReschedule =
     (updates.appointmentDate !== undefined &&
       updates.appointmentDate !== existing.appointmentDate) ||
-    (updates.appointmentTime !== undefined &&
-      updates.appointmentTime !== existing.appointmentTime.slice(0, 5));
+    (updates.dropoffWindow !== undefined && updates.dropoffWindow !== existing.dropoffWindow);
 
   let updated: Booking;
   if (isReschedule) {
-    // Re-check availability and write atomically, same advisory-lock guard as create.
+    // Re-check availability and write atomically, same advisory-lock guard as create. The
+    // window's start time is resolved server-side and stored as appointmentTime.
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${targetDate}))`);
-      const available = await isSlotAvailable(tx, targetDate, targetTime, existing.serviceId, id);
-      if (!available) return null;
+      const { ok, startTime } = await isWindowAvailable(tx, targetDate, targetWindow, id);
+      if (!ok || !startTime) return null;
       const [row] = await tx
         .update(bookings)
-        .set(updates)
+        .set({ ...updates, appointmentTime: startTime })
         .where(eq(bookings.id, id))
         .returning();
       return row;
     });
     if (!result) {
       return Response.json(
-        { error: "That time slot is not available" },
+        { error: "That drop-off window is not available" },
         { status: 409 },
       );
     }
