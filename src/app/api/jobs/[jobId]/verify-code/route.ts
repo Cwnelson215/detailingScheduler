@@ -31,7 +31,7 @@ function hashesEqual(a: string, b: string): boolean {
 
 // Step-up part 2: the customer submits the emailed code. On success we issue the manage
 // cookie (cust_session) scoped to this booking, which authorizes /manage + /messages.
-export async function POST(request: NextRequest, { params }: { params: { jobId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   if (!rateLimit(`code-verify:${getClientIp(request)}`, 20, 15 * 60 * 1000)) {
     return Response.json({ error: "Too many requests. Please try again later." }, { status: 429 });
   }
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest, { params }: { params: { jobId: 
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const jobId = normalizeJobId(params.jobId);
+  const jobId = normalizeJobId((await params).jobId);
   const [booking] = await db.select().from(bookings).where(eq(bookings.jobId, jobId));
   if (!booking || normalizeEmail(booking.customerEmail) !== sessionEmail) {
     return Response.json({ error: "Invalid or expired code." }, { status: 400 });

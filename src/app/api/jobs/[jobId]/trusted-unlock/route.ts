@@ -20,12 +20,12 @@ import {
 // does NOT require a prior email lookup (cust_view): the device cookie is the proof, so it works
 // straight off the confirmation page. Any device without the cookie gets { needsCode: true } and
 // falls back to the emailed code. The generic 403 also avoids leaking which Job IDs exist.
-export async function POST(request: NextRequest, { params }: { params: { jobId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   if (!rateLimit(`trusted-unlock:${getClientIp(request)}`, 20, 15 * 60 * 1000)) {
     return Response.json({ error: "Too many requests. Please try again later." }, { status: 429 });
   }
 
-  const jobId = normalizeJobId(params.jobId);
+  const jobId = normalizeJobId((await params).jobId);
   const [booking] = await db.select().from(bookings).where(eq(bookings.jobId, jobId));
 
   if (!booking || !isDeviceTrustedFor(request, booking.id)) {

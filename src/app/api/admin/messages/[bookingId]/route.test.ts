@@ -23,7 +23,7 @@ function reqWith(method: string, bookingId: number, body?: unknown) {
   });
 }
 
-const ctx = (id: number | string) => ({ params: { bookingId: String(id) } });
+const ctx = (id: number | string) => ({ params: Promise.resolve({ bookingId: String(id) }) });
 
 let bookingId: number;
 

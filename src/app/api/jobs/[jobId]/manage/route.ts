@@ -19,13 +19,13 @@ type Booking = typeof bookings.$inferSelect;
 // Authorized by the booking-scoped cookie issued at lookup, not an admin session.
 export async function POST(
   request: NextRequest,
-  { params }: { params: { jobId: string } },
+  { params }: { params: Promise<{ jobId: string }> },
 ) {
   if (!rateLimit(`manage:${getClientIp(request)}`, 20, 10 * 60 * 1000)) {
     return Response.json({ error: "Too many requests. Please try again later." }, { status: 429 });
   }
 
-  const jobId = normalizeJobId(params.jobId);
+  const jobId = normalizeJobId((await params).jobId);
   const [existing] = await db.select().from(bookings).where(eq(bookings.jobId, jobId));
   if (!existing) {
     return Response.json({ error: "Booking not found" }, { status: 404 });

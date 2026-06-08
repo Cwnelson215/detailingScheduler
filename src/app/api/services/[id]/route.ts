@@ -7,12 +7,12 @@ import { requireAdmin } from "@/lib/require-admin";
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const id = parseInt(params.id);
+  const id = parseInt((await params).id);
   const body = await request.json();
   const parsed = serviceUpdateSchema.safeParse(body);
   if (!parsed.success) {
@@ -34,12 +34,12 @@ export async function PATCH(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const id = parseInt(params.id);
+  const id = parseInt((await params).id);
   const [deleted] = await db
     .delete(services)
     .where(eq(services.id, id))

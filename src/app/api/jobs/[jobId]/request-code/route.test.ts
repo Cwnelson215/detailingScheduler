@@ -46,19 +46,19 @@ beforeEach(async () => {
 
 describe("POST /api/jobs/[jobId]/request-code", () => {
   it("401 without a view cookie", async () => {
-    const res = await POST(req(jobId), { params: { jobId } });
+    const res = await POST(req(jobId), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(401);
     expect(sendVerificationCode).not.toHaveBeenCalled();
   });
 
   it("404 when the view cookie email does not match the booking", async () => {
-    const res = await POST(req(jobId, issueViewToken("someone@else.com")), { params: { jobId } });
+    const res = await POST(req(jobId, issueViewToken("someone@else.com")), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(404);
     expect(sendVerificationCode).not.toHaveBeenCalled();
   });
 
   it("issues and emails a code for a matching email + job id", async () => {
-    const res = await POST(req(jobId, issueViewToken("jane@example.com")), { params: { jobId } });
+    const res = await POST(req(jobId, issueViewToken("jane@example.com")), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(200);
     expect(sendVerificationCode).toHaveBeenCalledOnce();
     const rows = await db
@@ -71,8 +71,8 @@ describe("POST /api/jobs/[jobId]/request-code", () => {
 
   it("invalidates a prior unconsumed code when a new one is requested", async () => {
     const token = issueViewToken("jane@example.com");
-    await POST(req(jobId, token), { params: { jobId } });
-    await POST(req(jobId, token), { params: { jobId } });
+    await POST(req(jobId, token), { params: Promise.resolve({ jobId }) });
+    await POST(req(jobId, token), { params: Promise.resolve({ jobId }) });
     const rows = await db
       .select()
       .from(customerVerificationCodes)

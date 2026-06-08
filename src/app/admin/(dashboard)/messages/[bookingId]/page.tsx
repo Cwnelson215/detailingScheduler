@@ -13,9 +13,9 @@ export const dynamic = "force-dynamic";
 export default async function AdminMessageThreadPage({
   params,
 }: {
-  params: { bookingId: string };
+  params: Promise<{ bookingId: string }>;
 }) {
-  const bookingId = parseInt(params.bookingId, 10);
+  const bookingId = parseInt((await params).bookingId, 10);
   if (Number.isNaN(bookingId)) notFound();
 
   const [booking] = await db

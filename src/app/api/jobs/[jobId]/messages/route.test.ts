@@ -45,13 +45,13 @@ beforeEach(async () => {
 
 describe("POST /api/jobs/[jobId]/messages", () => {
   it("401 without a session cookie", async () => {
-    const res = await POST(reqWith("POST", jobId, { body: "hi" }), { params: { jobId } });
+    const res = await POST(reqWith("POST", jobId, { body: "hi" }), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(401);
   });
 
   it("stores the message encrypted and notifies the owner", async () => {
     const res = await POST(reqWith("POST", jobId, { body: "is parking available?" }, token), {
-      params: { jobId },
+      params: Promise.resolve({ jobId }),
     });
     expect(res.status).toBe(201);
     const payload = await res.json();
@@ -66,13 +66,13 @@ describe("POST /api/jobs/[jobId]/messages", () => {
   });
 
   it("returns 400 on empty body", async () => {
-    const res = await POST(reqWith("POST", jobId, { body: "" }, token), { params: { jobId } });
+    const res = await POST(reqWith("POST", jobId, { body: "" }, token), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(400);
   });
 
   it("returns 429 when rate-limited", async () => {
     vi.mocked(rateLimit).mockReturnValueOnce(false);
-    const res = await POST(reqWith("POST", jobId, { body: "hi" }, token), { params: { jobId } });
+    const res = await POST(reqWith("POST", jobId, { body: "hi" }, token), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(429);
   });
 });
@@ -82,7 +82,7 @@ describe("GET /api/jobs/[jobId]/messages", () => {
     await seedMessage(bookingId, "owner", "we have parking out back");
     await seedMessage(bookingId, "customer", "great, thanks");
 
-    const res = await GET(reqWith("GET", jobId, undefined, token), { params: { jobId } });
+    const res = await GET(reqWith("GET", jobId, undefined, token), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(200);
     const history = await res.json();
     expect(history).toHaveLength(2);
@@ -96,7 +96,7 @@ describe("GET /api/jobs/[jobId]/messages", () => {
   });
 
   it("401 without a session cookie", async () => {
-    const res = await GET(reqWith("GET", jobId), { params: { jobId } });
+    const res = await GET(reqWith("GET", jobId), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(401);
   });
 });

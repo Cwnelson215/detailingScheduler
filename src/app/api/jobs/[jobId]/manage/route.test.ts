@@ -49,26 +49,26 @@ beforeEach(async () => {
 
 describe("POST /api/jobs/[jobId]/manage", () => {
   it("401 without a session cookie", async () => {
-    const res = await POST(req(jobId, { cancel: true }), { params: { jobId } });
+    const res = await POST(req(jobId, { cancel: true }), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(401);
   });
 
   it("401 with a cookie scoped to a different booking", async () => {
     const res = await POST(req(jobId, { cancel: true }, issueCustomerToken(bookingId + 999)), {
-      params: { jobId },
+      params: Promise.resolve({ jobId }),
     });
     expect(res.status).toBe(401);
   });
 
   it("cancels the booking", async () => {
-    const res = await POST(req(jobId, { cancel: true }, token), { params: { jobId } });
+    const res = await POST(req(jobId, { cancel: true }, token), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(200);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
     expect(row.status).toBe("cancelled");
   });
 
   it("reschedules into a free window", async () => {
-    const res = await POST(req(jobId, { dropoffWindow: "evening" }, token), { params: { jobId } });
+    const res = await POST(req(jobId, { dropoffWindow: "evening" }, token), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(200);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
     expect(row.dropoffWindow).toBe("evening");
@@ -77,14 +77,14 @@ describe("POST /api/jobs/[jobId]/manage", () => {
 
   it("409 when rescheduling onto a taken window", async () => {
     await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "evening", appointmentTime: "15:00" });
-    const res = await POST(req(jobId, { dropoffWindow: "evening" }, token), { params: { jobId } });
+    const res = await POST(req(jobId, { dropoffWindow: "evening" }, token), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(409);
   });
 
   it("edits contact/vehicle details", async () => {
     const res = await POST(
       req(jobId, { customerName: "Changed Name", vehicleMake: "Honda" }, token),
-      { params: { jobId } },
+      { params: Promise.resolve({ jobId }) },
     );
     expect(res.status).toBe(200);
     const [row] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
@@ -94,7 +94,7 @@ describe("POST /api/jobs/[jobId]/manage", () => {
 
   it("404 for an unknown job id", async () => {
     const res = await POST(req("ZZZZ9999", { cancel: true }, token), {
-      params: { jobId: "ZZZZ9999" },
+      params: Promise.resolve({ jobId: "ZZZZ9999" }),
     });
     expect(res.status).toBe(404);
   });

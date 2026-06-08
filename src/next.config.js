@@ -22,10 +22,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  experimental: {
-    instrumentationHook: true,
-    serverComponentsExternalPackages: ["@electric-sql/pglite"],
-  },
+  serverExternalPackages: ["@electric-sql/pglite"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

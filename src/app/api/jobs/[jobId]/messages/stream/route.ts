@@ -11,11 +11,11 @@ import { chatStreamResponse } from "@/lib/sse";
 
 // Live message stream for the customer, authorized by the booking-scoped cookie (the only
 // credential an EventSource can carry).
-export async function GET(request: NextRequest, { params }: { params: { jobId: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   const [booking] = await db
     .select({ id: bookings.id })
     .from(bookings)
-    .where(eq(bookings.jobId, normalizeJobId(params.jobId)));
+    .where(eq(bookings.jobId, normalizeJobId((await params).jobId)));
   if (!booking) return Response.json({ error: "Booking not found" }, { status: 404 });
   if (!requireCustomerBooking(request, booking.id)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });

@@ -11,12 +11,12 @@ type Booking = typeof bookings.$inferSelect;
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const id = parseInt(params.id);
+  const id = parseInt((await params).id);
   if (Number.isNaN(id)) {
     return Response.json({ error: "Invalid booking id" }, { status: 400 });
   }
@@ -84,12 +84,12 @@ export async function PATCH(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const id = parseInt(params.id);
+  const id = parseInt((await params).id);
   if (Number.isNaN(id)) {
     return Response.json({ error: "Invalid booking id" }, { status: 400 });
   }

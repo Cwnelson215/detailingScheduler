@@ -25,7 +25,7 @@ function hashCode(code: string): string {
 // Step-up part 1: the customer (already email-verified at the view tier) submits their Job ID
 // to receive a one-time code. We confirm the Job ID belongs to *their* email, then email a
 // fresh code. Generic success either way so a valid view session can't probe other Job IDs.
-export async function POST(request: NextRequest, { params }: { params: { jobId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   if (!rateLimit(`code-req-ip:${getClientIp(request)}`, 10, 15 * 60 * 1000)) {
     return Response.json({ error: "Too many requests. Please try again later." }, { status: 429 });
   }
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest, { params }: { params: { jobId: 
     return Response.json({ error: "Look up your booking first." }, { status: 401 });
   }
 
-  const jobId = normalizeJobId(params.jobId);
+  const jobId = normalizeJobId((await params).jobId);
   const [booking] = await db.select().from(bookings).where(eq(bookings.jobId, jobId));
 
   // Generic failure for unknown Job ID or one not on this email — no oracle.

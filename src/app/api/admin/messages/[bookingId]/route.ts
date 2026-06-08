@@ -17,11 +17,11 @@ function parseBookingId(raw: string): number | null {
 }
 
 // Admin reads a thread (and marks the customer's messages read).
-export async function GET(_request: NextRequest, { params }: { params: { bookingId: string } }) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ bookingId: string }> }) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const bookingId = parseBookingId(params.bookingId);
+  const bookingId = parseBookingId((await params).bookingId);
   if (bookingId === null) return Response.json({ error: "Invalid booking id" }, { status: 400 });
 
   await markRead(bookingId, "customer");
@@ -29,11 +29,11 @@ export async function GET(_request: NextRequest, { params }: { params: { booking
 }
 
 // Admin replies; notify the customer by email (best-effort, env-gated).
-export async function POST(request: NextRequest, { params }: { params: { bookingId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ bookingId: string }> }) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const bookingId = parseBookingId(params.bookingId);
+  const bookingId = parseBookingId((await params).bookingId);
   if (bookingId === null) return Response.json({ error: "Invalid booking id" }, { status: 400 });
 
   const [booking] = await db.select().from(bookings).where(eq(bookings.id, bookingId));

@@ -48,33 +48,33 @@ beforeEach(async () => {
 describe("POST /api/jobs/[jobId]/trusted-unlock", () => {
   it("issues the manage cookie when the device is trusted for the booking", async () => {
     const device = issueDeviceToken([bookingId]);
-    const res = await POST(req(jobId, device), { params: { jobId } });
+    const res = await POST(req(jobId, device), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(200);
     const token = manageTokenFromCookie(res.headers.get("set-cookie"));
     expect(verifyCustomerToken(token)).toEqual({ bookingId });
   });
 
   it("403 needsCode without a device cookie", async () => {
-    const res = await POST(req(jobId), { params: { jobId } });
+    const res = await POST(req(jobId), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(403);
     await expect(res.json()).resolves.toEqual({ needsCode: true });
     expect(manageTokenFromCookie(res.headers.get("set-cookie"))).toBeUndefined();
   });
 
   it("403 when the device is trusted for a different booking", async () => {
-    const res = await POST(req(jobId, issueDeviceToken([bookingId + 999])), { params: { jobId } });
+    const res = await POST(req(jobId, issueDeviceToken([bookingId + 999])), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(403);
   });
 
   it("403 when the device cookie has expired", async () => {
     const expired = issueDeviceToken([bookingId], Date.now() - 3 * 60 * 60 * 1000);
-    const res = await POST(req(jobId, expired), { params: { jobId } });
+    const res = await POST(req(jobId, expired), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(403);
   });
 
   it("403 for an unknown Job ID even with a (mismatched) device cookie", async () => {
     const res = await POST(req("ZZZZ9999", issueDeviceToken([bookingId])), {
-      params: { jobId: "ZZZZ9999" },
+      params: Promise.resolve({ jobId: "ZZZZ9999" }),
     });
     expect(res.status).toBe(403);
   });

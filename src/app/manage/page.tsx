@@ -15,12 +15,13 @@ export const dynamic = "force-dynamic";
 export default async function ManageBookingPage({
   searchParams,
 }: {
-  searchParams: { token?: string };
+  searchParams: Promise<{ token?: string }>;
 }) {
+  const { token } = await searchParams;
   const info = await getBusinessInfo();
   const initial = (info.name.trim()[0] ?? "N").toUpperCase();
 
-  const result = searchParams.token
+  const result = token
     ? await db
         .select({
           id: bookings.id,
@@ -38,7 +39,7 @@ export default async function ManageBookingPage({
         })
         .from(bookings)
         .innerJoin(services, eq(bookings.serviceId, services.id))
-        .where(eq(bookings.confirmationToken, searchParams.token))
+        .where(eq(bookings.confirmationToken, token))
     : [];
 
   const booking = result[0];
@@ -127,7 +128,7 @@ export default async function ManageBookingPage({
 
               <div className="mt-6">
                 {canCancel ? (
-                  <ManageActions token={searchParams.token!} />
+                  <ManageActions token={token!} />
                 ) : (
                   <p className="text-sm text-muted-foreground text-center">
                     {booking.status === "cancelled"

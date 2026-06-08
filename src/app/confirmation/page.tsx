@@ -16,9 +16,10 @@ export const dynamic = "force-dynamic";
 export default async function ConfirmationPage({
   searchParams,
 }: {
-  searchParams: { token?: string };
+  searchParams: Promise<{ token?: string }>;
 }) {
-  if (!searchParams.token) redirect("/");
+  const { token } = await searchParams;
+  if (!token) redirect("/");
 
   const result = await db
     .select({
@@ -40,7 +41,7 @@ export default async function ConfirmationPage({
     })
     .from(bookings)
     .innerJoin(services, eq(bookings.serviceId, services.id))
-    .where(eq(bookings.confirmationToken, searchParams.token));
+    .where(eq(bookings.confirmationToken, token));
 
   if (result.length === 0) redirect("/");
   const booking = result[0];
@@ -141,7 +142,7 @@ export default async function ConfirmationPage({
 
           <div className="mt-8 flex flex-wrap gap-4 justify-center">
             <Button asChild>
-              <Link href={`/my-booking/${searchParams.token}`}>Manage this booking</Link>
+              <Link href={`/my-booking/${token}`}>Manage this booking</Link>
             </Button>
             <Button asChild variant="outline">
               <Link href="/">Back to Home</Link>

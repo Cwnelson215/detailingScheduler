@@ -26,8 +26,9 @@ export const dynamic = "force-dynamic";
 export default async function CustomerBookingViewPage({
   params,
 }: {
-  params: { token: string };
+  params: Promise<{ token: string }>;
 }) {
+  const { token } = await params;
   const [booking] = await db
     .select({
       id: bookings.id,
@@ -48,7 +49,7 @@ export default async function CustomerBookingViewPage({
     })
     .from(bookings)
     .innerJoin(services, eq(bookings.serviceId, services.id))
-    .where(eq(bookings.confirmationToken, params.token));
+    .where(eq(bookings.confirmationToken, token));
 
   // Gate on either the email-scoped view cookie (matching this booking's email) or a device-trust
   // cookie that vouches for this booking — the latter lets the just-booked customer reach this

@@ -26,7 +26,7 @@ function req(method: string, body?: unknown) {
       : {}),
   });
 }
-const ctx = (id: number | string) => ({ params: { id: String(id) } });
+const ctx = (id: number | string) => ({ params: Promise.resolve({ id: String(id) }) });
 
 beforeEach(async () => {
   vi.clearAllMocks();

@@ -68,13 +68,13 @@ beforeEach(async () => {
 describe("POST /api/jobs/[jobId]/verify-code", () => {
   it("401 without a view cookie", async () => {
     await insertCode();
-    const res = await POST(req(jobId, { code: "123456" }), { params: { jobId } });
+    const res = await POST(req(jobId, { code: "123456" }), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(401);
   });
 
   it("issues the manage cookie on a correct code and consumes it", async () => {
     await insertCode();
-    const res = await POST(req(jobId, { code: "123456" }, viewToken), { params: { jobId } });
+    const res = await POST(req(jobId, { code: "123456" }, viewToken), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(200);
 
     const token = manageTokenFromCookie(res.headers.get("set-cookie"));
@@ -89,7 +89,7 @@ describe("POST /api/jobs/[jobId]/verify-code", () => {
 
   it("rejects a wrong code, increments attempts, and sets no manage cookie", async () => {
     await insertCode();
-    const res = await POST(req(jobId, { code: "000000" }, viewToken), { params: { jobId } });
+    const res = await POST(req(jobId, { code: "000000" }, viewToken), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(400);
     expect(res.headers.get("set-cookie")).toBeNull();
     const [row] = await db
@@ -101,26 +101,26 @@ describe("POST /api/jobs/[jobId]/verify-code", () => {
 
   it("rejects an expired code", async () => {
     await insertCode({ expiresAt: new Date(Date.now() - 1000) });
-    const res = await POST(req(jobId, { code: "123456" }, viewToken), { params: { jobId } });
+    const res = await POST(req(jobId, { code: "123456" }, viewToken), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(400);
   });
 
   it("rejects an already-consumed code", async () => {
     await insertCode({ consumedAt: new Date() });
-    const res = await POST(req(jobId, { code: "123456" }, viewToken), { params: { jobId } });
+    const res = await POST(req(jobId, { code: "123456" }, viewToken), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(400);
   });
 
   it("locks out after too many attempts", async () => {
     await insertCode({ attempts: 5 });
-    const res = await POST(req(jobId, { code: "123456" }, viewToken), { params: { jobId } });
+    const res = await POST(req(jobId, { code: "123456" }, viewToken), { params: Promise.resolve({ jobId }) });
     expect(res.status).toBe(429);
   });
 
   it("rejects when the view cookie email does not match the booking", async () => {
     await insertCode();
     const res = await POST(req(jobId, { code: "123456" }, issueViewToken("other@example.com")), {
-      params: { jobId },
+      params: Promise.resolve({ jobId }),
     });
     expect(res.status).toBe(400);
   });

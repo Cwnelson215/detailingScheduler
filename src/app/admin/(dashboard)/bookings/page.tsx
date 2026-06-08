@@ -20,9 +20,9 @@ const statusColors: Record<string, "default" | "secondary" | "destructive" | "ou
 export default async function AdminBookingsPage({
   searchParams,
 }: {
-  searchParams: { status?: string };
+  searchParams: Promise<{ status?: string }>;
 }) {
-  const statusFilter = searchParams.status;
+  const statusFilter = (await searchParams).status;
 
   let query = db
     .select({

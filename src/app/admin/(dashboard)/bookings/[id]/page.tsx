@@ -22,8 +22,9 @@ const statusColors: Record<string, "default" | "secondary" | "destructive" | "ou
 export default async function AdminBookingDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
   const result = await db
     .select({
       id: bookings.id,
@@ -46,7 +47,7 @@ export default async function AdminBookingDetailPage({
     })
     .from(bookings)
     .innerJoin(services, eq(bookings.serviceId, services.id))
-    .where(eq(bookings.id, parseInt(params.id)));
+    .where(eq(bookings.id, parseInt(id)));
 
   if (result.length === 0) redirect("/admin/bookings");
   const booking = result[0];
