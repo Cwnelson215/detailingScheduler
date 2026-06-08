@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { businessHours, blockedDates } from "@/db/schema";
+import { businessHours, availableDates } from "@/db/schema";
 import { asc } from "drizzle-orm";
 import { ScheduleManager } from "@/components/admin/schedule-manager";
 
@@ -11,15 +11,15 @@ export default async function AdminSchedulePage() {
     .from(businessHours)
     .orderBy(asc(businessHours.dayOfWeek));
 
-  const blocked = await db
+  const available = await db
     .select()
-    .from(blockedDates)
-    .orderBy(asc(blockedDates.date));
+    .from(availableDates)
+    .orderBy(asc(availableDates.date));
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Schedule Management</h1>
-      <ScheduleManager initialHours={hours} initialBlockedDates={blocked} />
+      <ScheduleManager initialHours={hours} initialAvailableDates={available} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { businessHours, blockedDates, bookings } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { businessHours, availableDates, bookings } from "@/db/schema";
+import { eq, and, gte, lte, asc, sql } from "drizzle-orm";
 import { windowLabel, type DropoffWindow, type WindowOption } from "./format";
 
 export type { DropoffWindow, WindowOption };
@@ -24,13 +24,14 @@ function hhmm(t: string): string {
 }
 
 // Customer-facing list of drop-off windows for a date: which windows the day offers and
-// whether each is still free. Empty when the date is blocked or the shop is closed. Saturday
-// returns morning-only purely from the data (no day-of-week special-casing here).
+// whether each is still free. Empty when the date hasn't been opened by the admin or the shop
+// is closed. Saturday returns morning-only purely from the data (no day-of-week special-casing).
 export async function getWindowOptions(dateStr: string): Promise<WindowOption[]> {
   const dayOfWeek = new Date(dateStr + "T00:00:00").getDay();
 
-  const blocked = await db.select().from(blockedDates).where(eq(blockedDates.date, dateStr));
-  if (blocked.length > 0) return [];
+  // Allowlist: a date is bookable only if the admin has opened it.
+  const open = await db.select().from(availableDates).where(eq(availableDates.date, dateStr));
+  if (open.length === 0) return [];
 
   const hours = await db.select().from(businessHours).where(eq(businessHours.dayOfWeek, dayOfWeek));
   if (hours.length === 0 || !hours[0].isOpen) return [];
@@ -71,8 +72,8 @@ export async function isWindowAvailable(
 ): Promise<{ ok: boolean; startTime?: string }> {
   const dayOfWeek = new Date(dateStr + "T00:00:00").getDay();
 
-  const blocked = await executor.select().from(blockedDates).where(eq(blockedDates.date, dateStr));
-  if (blocked.length > 0) return { ok: false };
+  const open = await executor.select().from(availableDates).where(eq(availableDates.date, dateStr));
+  if (open.length === 0) return { ok: false };
 
   const hours = await executor
     .select()
@@ -100,4 +101,22 @@ export async function isWindowAvailable(
     .where(and(...conditions));
 
   return { ok: existing.length === 0, startTime: hhmm(start) };
+}
+
+// Dates in [from, to] (inclusive, "YYYY-MM-DD") that a customer can still book: opened by the
+// admin AND with at least one free window. Backs the calendar's date graying. A visible month is
+// ~31 dates, so the per-date getWindowOptions loop is fine; batch the window query if it grows.
+export async function getAvailableDatesInRange(from: string, to: string): Promise<string[]> {
+  const open = await db
+    .select({ date: availableDates.date })
+    .from(availableDates)
+    .where(and(gte(availableDates.date, from), lte(availableDates.date, to)))
+    .orderBy(asc(availableDates.date));
+
+  const bookable: string[] = [];
+  for (const row of open) {
+    const options = await getWindowOptions(row.date);
+    if (options.some((o) => o.available)) bookable.push(row.date);
+  }
+  return bookable;
 }

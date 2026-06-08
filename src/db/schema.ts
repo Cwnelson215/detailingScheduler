@@ -43,11 +43,29 @@ export const businessHours = pgTable("business_hours", {
   eveningEnd: time("evening_end"),
 });
 
+// Deprecated: the legacy denylist of unavailable dates. No longer read or written — the
+// availability model was inverted to an allowlist (see `availableDates`). Kept so existing
+// data isn't dropped and the migration stays reversible.
 export const blockedDates = pgTable("blocked_dates", {
   id: serial("id").primaryKey(),
   date: date("date").notNull(),
   reason: varchar("reason", { length: 255 }).default(""),
 });
+
+// Allowlist of dates the shop is open for booking. A date is bookable only if it has a row
+// here; everything is unavailable by default. The admin opens dates from the Schedule page.
+// Window times still come from the per-weekday `businessHours` template.
+export const availableDates = pgTable(
+  "available_dates",
+  {
+    id: serial("id").primaryKey(),
+    date: date("date").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    dateIdx: uniqueIndex("available_dates_date_idx").on(t.date),
+  }),
+);
 
 export const bookings = pgTable(
   "bookings",

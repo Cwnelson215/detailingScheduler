@@ -64,6 +64,19 @@ export async function runMigrations() {
     )
   `);
 
+  // Allowlist of bookable dates. Empty by default — every date is unavailable until the admin
+  // opens it in the Schedule page. Replaces the old `blocked_dates` denylist (kept above, unused).
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS available_dates (
+      id SERIAL PRIMARY KEY,
+      date DATE NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(
+    sql`CREATE UNIQUE INDEX IF NOT EXISTS available_dates_date_idx ON available_dates (date)`,
+  );
+
   // Additive columns / indexes for existing deployments (idempotent).
   await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS confirmation_token VARCHAR(64)`);
   await db.execute(

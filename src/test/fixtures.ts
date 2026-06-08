@@ -3,16 +3,17 @@
 // to the code under test. Call resetDb() in a beforeEach.
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { services, bookings, bookingMessages, blockedDates, businessHours } from "@/db/schema";
+import { services, bookings, bookingMessages, availableDates, businessHours } from "@/db/schema";
 import { encryptMessage } from "@/lib/crypto";
 
 // Wipe per-test data and reset identity sequences (so IDs are predictable per test).
 // business_hours is left intact — runMigrations seeds one row per weekday: Mon–Fri offer
 // the morning (07:00–09:00) and evening (15:00–17:00) drop-off windows, Saturday is
-// morning-only, Sunday is closed; use setHours() to override a day.
+// morning-only, Sunday is closed; use setHours() to override a day. available_dates is wiped,
+// so every date starts unavailable — call markAvailable() to open the dates a test needs.
 export async function resetDb(): Promise<void> {
   await db.execute(
-    sql`TRUNCATE customer_verification_codes, booking_messages, bookings, services, blocked_dates RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE customer_verification_codes, booking_messages, bookings, services, available_dates RESTART IDENTITY CASCADE`,
   );
 }
 
@@ -66,8 +67,10 @@ export async function seedMessage(
   return row;
 }
 
-export async function blockDate(date: string, reason = ""): Promise<void> {
-  await db.insert(blockedDates).values({ date, reason });
+// Open a date for booking (allowlist). Without this a date offers no windows, since every
+// date is unavailable by default under the inverted availability model.
+export async function markAvailable(date: string): Promise<void> {
+  await db.insert(availableDates).values({ date }).onConflictDoNothing({ target: availableDates.date });
 }
 
 // Override a weekday's schedule. Pass only the fields a test cares about, e.g.

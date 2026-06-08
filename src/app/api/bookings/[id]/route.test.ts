@@ -13,7 +13,7 @@ import { getServerSession } from "next-auth";
 import { notifyBookingStatus } from "@/lib/email";
 import { db } from "@/db";
 import { bookings } from "@/db/schema";
-import { resetDb, seedService, seedBooking, futureDateForWeekday } from "@/test/fixtures";
+import { resetDb, seedService, seedBooking, markAvailable, futureDateForWeekday } from "@/test/fixtures";
 
 const MONDAY = futureDateForWeekday(1);
 let serviceId: number;
@@ -32,6 +32,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   vi.mocked(getServerSession).mockResolvedValue({ user: { name: "Admin" } } as never);
   await resetDb();
+  await markAvailable(MONDAY); // reschedule path checks the allowlist; open the date these tests use
   const svc = await seedService({ durationMins: 60 });
   serviceId = svc.id;
 });

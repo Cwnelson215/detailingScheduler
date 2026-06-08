@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, addMonths, isSameMonth, isSameDay, isBefore, startOfDay } from "date-fns";
@@ -12,6 +12,7 @@ interface CalendarPickerProps {
 
 export function CalendarPicker({ selected, onSelect }: CalendarPickerProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [availableDates, setAvailableDates] = useState<Set<string>>(new Set());
   const today = startOfDay(new Date());
   const selectedDate = selected ? new Date(selected + "T00:00:00") : null;
 
@@ -26,6 +27,25 @@ export function CalendarPicker({ selected, onSelect }: CalendarPickerProps) {
     days.push(day);
     day = addDays(day, 1);
   }
+
+  // Only admin-opened dates with a free window are bookable; fetch them for the visible grid
+  // so everything else renders disabled. Re-fetched whenever the month changes.
+  useEffect(() => {
+    const from = format(calStart, "yyyy-MM-dd");
+    const to = format(calEnd, "yyyy-MM-dd");
+    let cancelled = false;
+    fetch(`/api/availability/dates?from=${from}&to=${to}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) setAvailableDates(new Set(Array.isArray(data) ? data : []));
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableDates(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentMonth]);
 
   const weeks: Date[][] = [];
   for (let i = 0; i < days.length; i += 7) {
@@ -64,23 +84,26 @@ export function CalendarPicker({ selected, onSelect }: CalendarPickerProps) {
           const isSelected = selectedDate && isSameDay(d, selectedDate);
           const isToday = isSameDay(d, today);
           const dateStr = format(d, "yyyy-MM-dd");
+          const isAvailable = availableDates.has(dateStr);
+          const disabled = isPast || !isCurrentMonth || !isAvailable;
 
           return (
             <button
               key={i}
-              disabled={isPast || !isCurrentMonth}
+              disabled={disabled}
               onClick={() => onSelect(dateStr)}
-              className={`h-10 w-10 rounded-md text-sm transition-colors ${
+              className={`relative h-10 w-10 rounded-md text-sm transition-colors ${
                 isSelected
                   ? "bg-primary text-primary-foreground"
-                  : isToday
-                  ? "bg-accent font-bold"
-                  : !isCurrentMonth || isPast
+                  : disabled
                   ? "text-muted-foreground/30 cursor-not-allowed"
                   : "hover:bg-accent"
-              }`}
+              } ${isToday && !isSelected ? "font-bold" : ""}`}
             >
               {format(d, "d")}
+              {isAvailable && !isSelected && (
+                <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-primary" />
+              )}
             </button>
           );
         })}

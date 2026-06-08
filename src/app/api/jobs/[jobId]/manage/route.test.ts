@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { POST } from "./route";
 import { db } from "@/db";
 import { bookings } from "@/db/schema";
-import { resetDb, seedService, seedBooking, futureDateForWeekday } from "@/test/fixtures";
+import { resetDb, seedService, seedBooking, markAvailable, futureDateForWeekday } from "@/test/fixtures";
 import { rateLimit } from "@/lib/rate-limit";
 import { issueCustomerToken, CUSTOMER_COOKIE } from "@/lib/customer-session";
 
@@ -38,6 +38,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   vi.mocked(rateLimit).mockReturnValue(true);
   await resetDb();
+  await markAvailable(MONDAY); // reschedule path checks the allowlist; open the date these tests use
   const svc = await seedService({ durationMins: 60 });
   serviceId = svc.id;
   const b = await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });

@@ -20,7 +20,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { bookings } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { resetDb, seedService, seedBooking, futureDateForWeekday } from "@/test/fixtures";
+import { resetDb, seedService, seedBooking, markAvailable, futureDateForWeekday } from "@/test/fixtures";
 
 const MONDAY = futureDateForWeekday(1);
 let serviceId: number;
@@ -52,6 +52,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   vi.mocked(rateLimit).mockReturnValue(true);
   await resetDb();
+  await markAvailable(MONDAY); // every date is unavailable by default; open the one these tests book
   const svc = await seedService({ durationMins: 60 });
   serviceId = svc.id;
 });

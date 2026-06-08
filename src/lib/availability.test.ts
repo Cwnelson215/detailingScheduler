@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { db } from "@/db";
-import { getWindowOptions, isWindowAvailable } from "@/lib/availability";
+import { getWindowOptions, isWindowAvailable, getAvailableDatesInRange } from "@/lib/availability";
 import {
   resetDb,
   seedService,
   seedBooking,
-  blockDate,
+  markAvailable,
   setHours,
   futureDateForWeekday,
 } from "@/test/fixtures";
@@ -40,6 +40,11 @@ beforeEach(async () => {
     eveningStart: null,
     eveningEnd: null,
   });
+  // Every date is unavailable by default now; open the weekdays these tests exercise. SUNDAY is
+  // opened too so the "closed day" tests isolate the isOpen=false path, not the allowlist gate.
+  await markAvailable(MONDAY);
+  await markAvailable(SATURDAY);
+  await markAvailable(SUNDAY);
   const svc = await seedService();
   serviceId = svc.id;
 });
@@ -62,9 +67,9 @@ describe("getWindowOptions", () => {
     expect(await getWindowOptions(SUNDAY)).toEqual([]);
   });
 
-  it("returns nothing for a blocked date", async () => {
-    await blockDate(MONDAY);
-    expect(await getWindowOptions(MONDAY)).toEqual([]);
+  it("returns nothing for a date that hasn't been opened", async () => {
+    const unopened = futureDateForWeekday(1, 28);
+    expect(await getWindowOptions(unopened)).toEqual([]);
   });
 
   it("marks a window taken by an active booking unavailable, leaving the other free", async () => {
@@ -99,9 +104,9 @@ describe("isWindowAvailable", () => {
     expect(await isWindowAvailable(db, MONDAY, "evening")).toEqual({ ok: true, startTime: "15:00" });
   });
 
-  it("rejects a blocked date", async () => {
-    await blockDate(MONDAY, "holiday");
-    expect(await isWindowAvailable(db, MONDAY, "morning")).toMatchObject({ ok: false });
+  it("rejects a date that hasn't been opened", async () => {
+    const unopened = futureDateForWeekday(1, 28);
+    expect(await isWindowAvailable(db, unopened, "morning")).toMatchObject({ ok: false });
   });
 
   it("rejects a closed day", async () => {
@@ -136,5 +141,41 @@ describe("isWindowAvailable", () => {
       status: "cancelled",
     });
     expect(await isWindowAvailable(db, MONDAY, "morning")).toMatchObject({ ok: true });
+  });
+});
+
+describe("getAvailableDatesInRange", () => {
+  // Wide range covering all three opened weekdays seeded in beforeEach.
+  const from = [MONDAY, SATURDAY, SUNDAY].sort()[0];
+  const to = futureDateForWeekday(1, 28);
+
+  it("includes opened weekdays that still have a free window", async () => {
+    const dates = await getAvailableDatesInRange(from, to);
+    expect(dates).toContain(MONDAY);
+    expect(dates).toContain(SATURDAY);
+  });
+
+  it("excludes a date that hasn't been opened", async () => {
+    const unopened = futureDateForWeekday(1, 28);
+    const dates = await getAvailableDatesInRange(from, unopened);
+    expect(dates).not.toContain(unopened);
+  });
+
+  it("excludes an opened-but-closed day (no windows)", async () => {
+    // SUNDAY is opened in the allowlist but the weekday is closed → no bookable window.
+    const dates = await getAvailableDatesInRange(from, to);
+    expect(dates).not.toContain(SUNDAY);
+  });
+
+  it("excludes an opened date once every window is booked", async () => {
+    await seedBooking({ serviceId, appointmentDate: MONDAY, dropoffWindow: "morning" });
+    await seedBooking({
+      serviceId,
+      appointmentDate: MONDAY,
+      dropoffWindow: "evening",
+      appointmentTime: "15:00",
+    });
+    const dates = await getAvailableDatesInRange(from, to);
+    expect(dates).not.toContain(MONDAY);
   });
 });

@@ -4,17 +4,32 @@ import { services, businessHours } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { Check } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
+import { windowRange } from "@/lib/format";
 import { getBusinessInfo } from "@/lib/business-info";
 import { ContactForm } from "@/components/contact-form";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-function formatTime(time: string): string {
-  const [h, m] = time.split(":");
-  const hour = parseInt(h);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
-  return `${display}:${m} ${ampm}`;
+// Drop-off windows replaced the legacy open→close model; render the enabled windows
+// (morning/evening) for each day. Skips any window missing its start/end.
+function dayWindows(h: {
+  isOpen: boolean;
+  morningEnabled: boolean;
+  morningStart: string | null;
+  morningEnd: string | null;
+  eveningEnabled: boolean;
+  eveningStart: string | null;
+  eveningEnd: string | null;
+}): string[] {
+  if (!h.isOpen) return [];
+  const ranges: string[] = [];
+  if (h.morningEnabled && h.morningStart && h.morningEnd) {
+    ranges.push(windowRange(h.morningStart, h.morningEnd));
+  }
+  if (h.eveningEnabled && h.eveningStart && h.eveningEnd) {
+    ranges.push(windowRange(h.eveningStart, h.eveningEnd));
+  }
+  return ranges;
 }
 
 function dollars(cents: number): string {
@@ -290,14 +305,21 @@ export default async function HomePage() {
           <div>
             <h3 className="mb-4 text-base font-semibold text-foreground">Hours</h3>
             <dl className="space-y-2 text-sm">
-              {hours.map((h) => (
-                <div key={h.dayOfWeek} className="flex max-w-[240px] justify-between">
-                  <dt className="text-muted-foreground">{dayNames[h.dayOfWeek]}</dt>
-                  <dd className="font-medium text-foreground">
-                    {h.isOpen ? `${formatTime(h.openTime!)} – ${formatTime(h.closeTime!)}` : "Closed"}
-                  </dd>
-                </div>
-              ))}
+              {hours.map((h) => {
+                const ranges = dayWindows(h);
+                return (
+                  <div key={h.dayOfWeek} className="flex max-w-[260px] justify-between gap-4">
+                    <dt className="text-muted-foreground">{dayNames[h.dayOfWeek]}</dt>
+                    <dd className="text-right font-medium text-foreground">
+                      {ranges.length === 0 ? (
+                        "Closed"
+                      ) : (
+                        ranges.map((r) => <div key={r}>{r}</div>)
+                      )}
+                    </dd>
+                  </div>
+                );
+              })}
             </dl>
           </div>
 
