@@ -6,7 +6,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
 
 vi.mock("resend", () => ({
-  Resend: vi.fn(() => ({ emails: { send: sendMock } })),
+  // Use a non-arrow function so the mock is constructable: email.ts calls
+  // `new Resend(apiKey)`, and vitest forwards `new` to this implementation
+  // (arrow functions throw "is not a constructor").
+  Resend: vi.fn(function () {
+    return { emails: { send: sendMock } };
+  }),
 }));
 vi.mock("@/lib/business-info", () => ({
   getBusinessInfo: vi.fn(async () => ({ name: "Nelson Detailing", address: "", phone: "" })),
