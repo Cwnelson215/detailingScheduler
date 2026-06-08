@@ -24,7 +24,13 @@ type BookingDetails = {
 
 type Step = "locked" | "jobId" | "code" | "unlocked";
 
-export function UnlockPanel({ booking }: { booking: BookingDetails }) {
+export function UnlockPanel({
+  booking,
+  deviceTrusted = false,
+}: {
+  booking: BookingDetails;
+  deviceTrusted?: boolean;
+}) {
   const [step, setStep] = useState<Step>("locked");
   const [jobIdInput, setJobIdInput] = useState("");
   // The normalized Job ID returned by verify-code, used to address the manage/chat APIs.
@@ -33,14 +39,25 @@ export function UnlockPanel({ booking }: { booking: BookingDetails }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function requestCode(e: React.FormEvent) {
+  // Job ID submit. On a trusted device the device cookie stands in for the emailed code, so we
+  // try trusted-unlock first and only fall back to emailing a code if this device isn't trusted
+  // (or its trust expired between page load and submit).
+  async function submitJobId(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
+    const enc = encodeURIComponent(jobIdInput.trim());
     try {
-      const res = await fetch(`/api/jobs/${encodeURIComponent(jobIdInput.trim())}/request-code`, {
-        method: "POST",
-      });
+      const unlock = await fetch(`/api/jobs/${enc}/trusted-unlock`, { method: "POST" });
+      if (unlock.ok) {
+        const data = await unlock.json().catch(() => null);
+        setJobId(typeof data?.jobId === "string" ? data.jobId : jobIdInput.trim());
+        setStep("unlocked");
+        return;
+      }
+
+      // Not a trusted device → fall back to the emailed-code flow.
+      const res = await fetch(`/api/jobs/${enc}/request-code`, { method: "POST" });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         throw new Error(typeof data?.error === "string" ? data.error : "Request failed.");
@@ -105,8 +122,9 @@ export function UnlockPanel({ booking }: { booking: BookingDetails }) {
       {step === "locked" && (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            To reschedule, cancel, edit your details, or message us, enter your Job ID — we&apos;ll
-            email a one-time code to confirm it&apos;s you.
+            {deviceTrusted
+              ? "To reschedule, cancel, edit your details, or message us, enter your Job ID below."
+              : "To reschedule, cancel, edit your details, or message us, enter your Job ID — we'll email a one-time code to confirm it's you."}
           </p>
           <Button variant="outline" onClick={() => setStep("jobId")}>
             Unlock changes
@@ -115,7 +133,7 @@ export function UnlockPanel({ booking }: { booking: BookingDetails }) {
       )}
 
       {step === "jobId" && (
-        <form onSubmit={requestCode} className="max-w-sm space-y-4">
+        <form onSubmit={submitJobId} className="max-w-sm space-y-4">
           <div>
             <Label htmlFor="jobId">Job ID</Label>
             <Input
@@ -133,7 +151,13 @@ export function UnlockPanel({ booking }: { booking: BookingDetails }) {
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-3">
             <Button type="submit" disabled={busy || !jobIdInput.trim()}>
-              {busy ? "Sending..." : "Email me a code"}
+              {busy
+                ? deviceTrusted
+                  ? "Unlocking..."
+                  : "Sending..."
+                : deviceTrusted
+                  ? "Unlock changes"
+                  : "Email me a code"}
             </Button>
             <Button type="button" variant="outline" onClick={() => setStep("locked")} disabled={busy}>
               Back

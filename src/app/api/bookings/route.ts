@@ -10,6 +10,7 @@ import { bookingSchema } from "@/lib/validations";
 import { isWindowAvailable } from "@/lib/availability";
 import { sendBookingConfirmation, sendOwnerNotification } from "@/lib/email";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
+import { addTrustedBooking } from "@/lib/customer-session";
 import { logger } from "@/lib/logger";
 
 export async function GET() {
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
     const results = await Promise.allSettled([
       sendBookingConfirmation({
         ...emailInput,
-        manageUrl: `${baseUrl}/manage?token=${booking.confirmationToken}`,
+        manageUrl: `${baseUrl}/my-booking/${booking.confirmationToken}`,
       }),
       sendOwnerNotification(emailInput),
     ]);
@@ -134,5 +135,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return Response.json(booking, { status: 201 });
+  // Trust this device for the booking it just created, so the customer can manage it (Job ID
+  // only, no emailed code) for the cookie's TTL. See src/lib/customer-session.
+  const headers = new Headers();
+  headers.append("Set-Cookie", addTrustedBooking(request, booking.id));
+  return Response.json(booking, { status: 201, headers });
 }

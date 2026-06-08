@@ -15,10 +15,19 @@ export const CUSTOMER_COOKIE = "cust_session";
 // (which authorizes mutations + chat and is only issued after the Job ID + emailed-code
 // step-up). See src/app/api/bookings/lookup + jobs/[jobId]/verify-code.
 export const VIEW_COOKIE = "cust_view";
+// Device-trust cookie: lists the booking IDs this device has either created or passed the
+// emailed-code step-up for. Within its (short) TTL it lets the holder unlock the manage tier
+// for those bookings by supplying only the Job ID — skipping the emailed code. It is a
+// convenience factor layered on top of the Job ID, not a replacement for it; an attacker on a
+// different device never gets this cookie and so always falls back to the emailed code.
+export const DEVICE_COOKIE = "cust_device";
 const TTL_SECONDS = 2 * 60 * 60; // 2h
+// How many trusted booking IDs to keep in the device cookie (most recent wins; keeps it small).
+const MAX_TRUSTED_BOOKINGS = 10;
 
 type Payload = { bookingId: number; exp: number };
 type ViewPayload = { email: string; exp: number };
+type DevicePayload = { bookingIds: number[]; exp: number };
 
 // Normalize emails the same way everywhere we compare them (lookup + view-cookie checks).
 export function normalizeEmail(email: string): string {
@@ -144,4 +153,77 @@ export function readCookie(request: Request, name: string): string | undefined {
 export function customerCookieHeader(token: string): string {
   const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
   return `${CUSTOMER_COOKIE}=${encodeURIComponent(token)}; HttpOnly;${secure} SameSite=Lax; Path=/; Max-Age=${TTL_SECONDS}`;
+}
+
+// --- Device-trust tier ---
+
+export function issueDeviceToken(bookingIds: number[], nowMs: number = Date.now()): string {
+  const payload: DevicePayload = {
+    bookingIds,
+    exp: Math.floor(nowMs / 1000) + TTL_SECONDS,
+  };
+  const body = b64urlEncode(JSON.stringify(payload));
+  return `${body}.${sign(body)}`;
+}
+
+export function verifyDeviceToken(
+  token: string | undefined,
+  nowMs: number = Date.now(),
+): { bookingIds: number[] } | null {
+  if (!token) return null;
+  const [body, sig] = token.split(".");
+  if (!body || !sig) return null;
+
+  // Constant-time signature comparison.
+  const expected = sign(body);
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return null;
+  }
+
+  let payload: DevicePayload;
+  try {
+    payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (
+    !Array.isArray(payload.bookingIds) ||
+    !payload.bookingIds.every((id) => typeof id === "number" && Number.isFinite(id)) ||
+    typeof payload.exp !== "number"
+  ) {
+    return null;
+  }
+  if (Math.floor(nowMs / 1000) > payload.exp) return null;
+  return { bookingIds: payload.bookingIds };
+}
+
+// The booking IDs a request's device cookie vouches for (empty if absent/expired/tampered).
+export function readTrustedBookingIds(request: Request): number[] {
+  return verifyDeviceToken(readCookie(request, DEVICE_COOKIE))?.bookingIds ?? [];
+}
+
+// True when the request's device cookie vouches for this specific booking.
+export function isDeviceTrustedFor(request: Request, bookingId: number): boolean {
+  return readTrustedBookingIds(request).includes(bookingId);
+}
+
+// Build a refreshed device cookie that adds bookingId to whatever the request already trusted,
+// deduped and capped to the most recent MAX_TRUSTED_BOOKINGS, with a fresh (sliding) expiry.
+// Returns the Set-Cookie header value.
+export function addTrustedBooking(
+  request: Request,
+  bookingId: number,
+  nowMs: number = Date.now(),
+): string {
+  const existing = readTrustedBookingIds(request).filter((id) => id !== bookingId);
+  const next = [...existing, bookingId].slice(-MAX_TRUSTED_BOOKINGS);
+  return deviceCookieHeader(issueDeviceToken(next, nowMs));
+}
+
+// Serialize the Set-Cookie header value for a freshly-issued device token.
+export function deviceCookieHeader(token: string): string {
+  const secure = process.env.NODE_ENV === "production" ? " Secure;" : "";
+  return `${DEVICE_COOKIE}=${encodeURIComponent(token)}; HttpOnly;${secure} SameSite=Lax; Path=/; Max-Age=${TTL_SECONDS}`;
 }

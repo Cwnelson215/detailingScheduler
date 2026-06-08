@@ -21,6 +21,7 @@ import { db } from "@/db";
 import { bookings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { resetDb, seedService, seedBooking, markAvailable, futureDateForWeekday } from "@/test/fixtures";
+import { verifyDeviceToken, DEVICE_COOKIE } from "@/lib/customer-session";
 
 const MONDAY = futureDateForWeekday(1);
 let serviceId: number;
@@ -66,6 +67,17 @@ describe("POST /api/bookings", () => {
     const [row] = await db.select().from(bookings);
     expect(row.dropoffWindow).toBe("morning");
     expect(row.appointmentTime.slice(0, 5)).toBe("07:00"); // resolved from business_hours
+  });
+
+  it("trusts the creating device for the new booking (sets cust_device)", async () => {
+    const res = await POST(postReq(validBody()));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const setCookie = res.headers.get("set-cookie");
+    const m = setCookie?.match(new RegExp(`${DEVICE_COOKIE}=([^;]+)`));
+    expect(m).not.toBeNull();
+    const verified = verifyDeviceToken(decodeURIComponent(m![1]));
+    expect(verified?.bookingIds).toContain(body.id);
   });
 
   it("rejects invalid input with 400 and saves nothing", async () => {

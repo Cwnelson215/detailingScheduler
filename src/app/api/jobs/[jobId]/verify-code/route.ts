@@ -14,6 +14,7 @@ import {
   normalizeEmail,
   issueCustomerToken,
   customerCookieHeader,
+  addTrustedBooking,
 } from "@/lib/customer-session";
 
 const MAX_ATTEMPTS = 5;
@@ -88,9 +89,10 @@ export async function POST(request: NextRequest, { params }: { params: { jobId: 
     .set({ consumedAt: new Date() })
     .where(eq(customerVerificationCodes.id, code.id));
 
-  const token = issueCustomerToken(booking.id);
-  return Response.json(
-    { ok: true, jobId },
-    { status: 200, headers: { "Set-Cookie": customerCookieHeader(token) } },
-  );
+  // Issue the manage cookie and (re)plant the device-trust cookie, so this device can skip the
+  // emailed code next time within the trust window. Two Set-Cookie headers require append().
+  const headers = new Headers();
+  headers.append("Set-Cookie", customerCookieHeader(issueCustomerToken(booking.id)));
+  headers.append("Set-Cookie", addTrustedBooking(request, booking.id));
+  return Response.json({ ok: true, jobId }, { status: 200, headers });
 }

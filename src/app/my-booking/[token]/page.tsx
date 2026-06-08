@@ -9,7 +9,13 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDuration } from "@/lib/utils";
 import { dropoffSummary } from "@/lib/format";
 import { getBusinessInfo } from "@/lib/business-info";
-import { VIEW_COOKIE, verifyViewToken, normalizeEmail } from "@/lib/customer-session";
+import {
+  VIEW_COOKIE,
+  verifyViewToken,
+  normalizeEmail,
+  DEVICE_COOKIE,
+  verifyDeviceToken,
+} from "@/lib/customer-session";
 import { UnlockPanel } from "@/components/customer/unlock-panel";
 
 export const dynamic = "force-dynamic";
@@ -44,9 +50,15 @@ export default async function CustomerBookingViewPage({
     .innerJoin(services, eq(bookings.serviceId, services.id))
     .where(eq(bookings.confirmationToken, params.token));
 
-  // Gate on the email-scoped view cookie whose email matches this booking. Otherwise re-auth.
-  const session = verifyViewToken(cookies().get(VIEW_COOKIE)?.value);
-  if (!booking || !session || session.email !== normalizeEmail(booking.customerEmail)) {
+  // Gate on either the email-scoped view cookie (matching this booking's email) or a device-trust
+  // cookie that vouches for this booking — the latter lets the just-booked customer reach this
+  // page without a lookup. Otherwise re-auth via /lookup.
+  const cookieStore = await cookies();
+  const session = verifyViewToken(cookieStore.get(VIEW_COOKIE)?.value);
+  const viewOk = !!session && session.email === normalizeEmail(booking?.customerEmail ?? "");
+  const trustedIds = verifyDeviceToken(cookieStore.get(DEVICE_COOKIE)?.value)?.bookingIds ?? [];
+  const deviceTrusted = !!booking && trustedIds.includes(booking.id);
+  if (!booking || (!viewOk && !deviceTrusted)) {
     redirect("/lookup");
   }
 
@@ -114,6 +126,7 @@ export default async function CustomerBookingViewPage({
               vehicleMake: booking.vehicleMake,
               vehicleModel: booking.vehicleModel,
             }}
+            deviceTrusted={deviceTrusted}
           />
 
           <div className="flex justify-center">

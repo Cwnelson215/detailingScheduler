@@ -129,19 +129,24 @@ export default async function ConfirmationPage({
           </p>
 
           <p className="mx-auto mt-4 max-w-md text-sm text-muted-foreground">
-            Look up your booking anytime with your email at{" "}
+            Want to reschedule, cancel, or message us? Use{" "}
+            <span className="font-medium">Manage this booking</span> below — on this device you can
+            make changes right away by entering your Job ID (above), no email code needed. From
+            another device, look up your booking anytime with your email at{" "}
             <Link href="/lookup" className="font-medium text-primary hover:underline">
               {info.name} / lookup
             </Link>
-            . To reschedule, cancel, or message us, you&apos;ll confirm your Job ID (above) with a
-            one-time code we email you — so keep this Job ID handy.
+            , so keep this Job ID handy.
           </p>
 
-          <div className="mt-8 flex gap-4 justify-center">
+          <div className="mt-8 flex flex-wrap gap-4 justify-center">
+            <Button asChild>
+              <Link href={`/my-booking/${searchParams.token}`}>Manage this booking</Link>
+            </Button>
             <Button asChild variant="outline">
               <Link href="/">Back to Home</Link>
             </Button>
-            <Button asChild>
+            <Button asChild variant="outline">
               <Link href="/booking">Book Another</Link>
             </Button>
           </div>
