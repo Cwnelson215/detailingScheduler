@@ -77,6 +77,17 @@ export async function runMigrations() {
     sql`CREATE UNIQUE INDEX IF NOT EXISTS available_dates_date_idx ON available_dates (date)`,
   );
 
+  // Per-date drop-off windows: each opened date carries its own windows (authoritative for
+  // customer availability), seeded from the weekday template when opened. Add the columns now;
+  // the one-time backfill from business_hours runs below, after that table gains its own
+  // window columns (which this backfill reads).
+  await db.execute(sql`ALTER TABLE available_dates ADD COLUMN IF NOT EXISTS morning_enabled BOOLEAN NOT NULL DEFAULT false`);
+  await db.execute(sql`ALTER TABLE available_dates ADD COLUMN IF NOT EXISTS morning_start TIME`);
+  await db.execute(sql`ALTER TABLE available_dates ADD COLUMN IF NOT EXISTS morning_end TIME`);
+  await db.execute(sql`ALTER TABLE available_dates ADD COLUMN IF NOT EXISTS evening_enabled BOOLEAN NOT NULL DEFAULT false`);
+  await db.execute(sql`ALTER TABLE available_dates ADD COLUMN IF NOT EXISTS evening_start TIME`);
+  await db.execute(sql`ALTER TABLE available_dates ADD COLUMN IF NOT EXISTS evening_end TIME`);
+
   // Additive columns / indexes for existing deployments (idempotent).
   await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS confirmation_token VARCHAR(64)`);
   await db.execute(
@@ -123,6 +134,19 @@ export async function runMigrations() {
   await db.execute(
     sql`UPDATE business_hours SET evening_enabled = true, evening_start = '15:00', evening_end = '17:00' WHERE evening_start IS NULL AND day_of_week BETWEEN 1 AND 5`,
   );
+
+  // One-time backfill of per-date windows from the (now-populated) weekday template, so dates
+  // opened before this change keep working. Guarded to freshly-defaulted rows, so it never
+  // clobbers admin per-date edits. EXTRACT(DOW FROM date) is 0=Sun..6=Sat = day_of_week.
+  await db.execute(sql`
+    UPDATE available_dates a
+    SET morning_enabled = b.morning_enabled, morning_start = b.morning_start, morning_end = b.morning_end,
+        evening_enabled = b.evening_enabled, evening_start = b.evening_start, evening_end = b.evening_end
+    FROM business_hours b
+    WHERE EXTRACT(DOW FROM a.date) = b.day_of_week
+      AND a.morning_enabled = false AND a.evening_enabled = false
+      AND a.morning_start IS NULL AND a.evening_start IS NULL
+  `);
 
   // Record which window each booking occupies. Add nullable, backfill existing rows by a
   // noon cutoff (their stored appointmentTime is arbitrary historical data), enforce NOT NULL.

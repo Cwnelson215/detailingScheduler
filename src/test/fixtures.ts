@@ -67,10 +67,41 @@ export async function seedMessage(
   return row;
 }
 
-// Open a date for booking (allowlist). Without this a date offers no windows, since every
-// date is unavailable by default under the inverted availability model.
-export async function markAvailable(date: string): Promise<void> {
-  await db.insert(availableDates).values({ date }).onConflictDoNothing({ target: availableDates.date });
+// Open a date for booking (allowlist). Windows are per-date and authoritative; by default we
+// seed them from the matching weekday's business_hours (mirroring the POST route), so a test
+// that opens a date gets that weekday's windows. Pass `windows` to override explicitly.
+export async function markAvailable(
+  date: string,
+  windows?: Partial<typeof availableDates.$inferInsert>,
+): Promise<void> {
+  let seeded: Partial<typeof availableDates.$inferInsert>;
+  if (windows) {
+    seeded = windows;
+  } else {
+    const dow = new Date(date + "T00:00:00").getDay();
+    const [h] = await db.select().from(businessHours).where(eq(businessHours.dayOfWeek, dow));
+    const open = h?.isOpen ?? false;
+    seeded = {
+      morningEnabled: open ? (h?.morningEnabled ?? false) : false,
+      morningStart: open ? h?.morningStart ?? null : null,
+      morningEnd: open ? h?.morningEnd ?? null : null,
+      eveningEnabled: open ? (h?.eveningEnabled ?? false) : false,
+      eveningStart: open ? h?.eveningStart ?? null : null,
+      eveningEnd: open ? h?.eveningEnd ?? null : null,
+    };
+  }
+  await db
+    .insert(availableDates)
+    .values({ date, ...seeded })
+    .onConflictDoNothing({ target: availableDates.date });
+}
+
+// Edit an already-opened date's drop-off windows (per-date authoritative).
+export async function setDateWindows(
+  date: string,
+  opts: Partial<typeof availableDates.$inferInsert>,
+): Promise<void> {
+  await db.update(availableDates).set(opts).where(eq(availableDates.date, date));
 }
 
 // Override a weekday's schedule. Pass only the fields a test cares about, e.g.

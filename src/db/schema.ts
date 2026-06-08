@@ -54,12 +54,22 @@ export const blockedDates = pgTable("blocked_dates", {
 
 // Allowlist of dates the shop is open for booking. A date is bookable only if it has a row
 // here; everything is unavailable by default. The admin opens dates from the Schedule page.
-// Window times still come from the per-weekday `businessHours` template.
+// Each opened date carries its OWN drop-off windows (seeded from the per-weekday
+// `businessHours` template when the date is opened, then editable per date) — those columns,
+// not the weekday template, are authoritative for customer-facing availability.
 export const availableDates = pgTable(
   "available_dates",
   {
     id: serial("id").primaryKey(),
     date: date("date").notNull(),
+    // Two fixed drop-off windows for this specific date. A window is offered to customers only
+    // when its *_enabled flag is set and its start/end are populated. Mirrors businessHours.
+    morningEnabled: boolean("morning_enabled").notNull().default(false),
+    morningStart: time("morning_start"),
+    morningEnd: time("morning_end"),
+    eveningEnabled: boolean("evening_enabled").notNull().default(false),
+    eveningStart: time("evening_start"),
+    eveningEnd: time("evening_end"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => ({

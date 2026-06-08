@@ -4,15 +4,24 @@ import { NextRequest } from "next/server";
 vi.mock("@/lib/auth", () => ({ authOptions: {} }));
 vi.mock("next-auth", () => ({ getServerSession: vi.fn() }));
 
-import { GET, POST } from "@/app/api/schedule/available-dates/route";
+import { GET, POST, PUT } from "@/app/api/schedule/available-dates/route";
 import { getServerSession } from "next-auth";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { availableDates } from "@/db/schema";
-import { resetDb, markAvailable } from "@/test/fixtures";
+import { resetDb, markAvailable, futureDateForWeekday } from "@/test/fixtures";
 
 function postReq(body: unknown) {
   return new NextRequest("http://localhost/api/schedule/available-dates", {
     method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function putReq(body: unknown) {
+  return new NextRequest("http://localhost/api/schedule/available-dates", {
+    method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -61,5 +70,41 @@ describe("POST /api/schedule/available-dates", () => {
     expect(res.status).toBe(200);
     const rows = await db.select().from(availableDates);
     expect(rows).toHaveLength(1);
+  });
+
+  it("seeds a newly opened date with its weekday template's windows", async () => {
+    const saturday = futureDateForWeekday(6); // template: morning-only
+    await POST(postReq({ add: [saturday], remove: [] }));
+    const [row] = await db.select().from(availableDates).where(eq(availableDates.date, saturday));
+    expect(row.morningEnabled).toBe(true);
+    expect(row.morningStart?.slice(0, 5)).toBe("07:00");
+    expect(row.eveningEnabled).toBe(false);
+  });
+});
+
+describe("PUT /api/schedule/available-dates", () => {
+  it("401 when unauthenticated", async () => {
+    vi.mocked(getServerSession).mockResolvedValue(null);
+    const res = await PUT(putReq([{ date: "2030-01-01", morningEnabled: false, morningStart: null, morningEnd: null, eveningEnabled: false, eveningStart: null, eveningEnd: null }]));
+    expect(res.status).toBe(401);
+  });
+
+  it("400 when an enabled window has start ≥ end", async () => {
+    const res = await PUT(putReq([
+      { date: "2030-01-01", morningEnabled: true, morningStart: "10:00", morningEnd: "09:00", eveningEnabled: false, eveningStart: null, eveningEnd: null },
+    ]));
+    expect(res.status).toBe(400);
+  });
+
+  it("updates an opened date's windows", async () => {
+    const monday = futureDateForWeekday(1);
+    await markAvailable(monday);
+    const res = await PUT(putReq([
+      { date: monday, morningEnabled: true, morningStart: "08:30", morningEnd: "10:30", eveningEnabled: false, eveningStart: null, eveningEnd: null },
+    ]));
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(availableDates).where(eq(availableDates.date, monday));
+    expect(row.morningStart?.slice(0, 5)).toBe("08:30");
+    expect(row.eveningEnabled).toBe(false);
   });
 });

@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
-import { AvailableDatesCalendar } from "@/components/admin/available-dates-calendar";
+import { AvailableDatesCalendar, type AvailableDate } from "@/components/admin/available-dates-calendar";
+import { WindowRow } from "@/components/admin/window-row";
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -20,11 +20,6 @@ interface BusinessHour {
   eveningEnabled: boolean;
   eveningStart: string | null;
   eveningEnd: string | null;
-}
-
-interface AvailableDate {
-  id: number;
-  date: string;
 }
 
 export function ScheduleManager({
@@ -98,12 +93,6 @@ export function ScheduleManager({
     router.refresh();
   };
 
-  // Weekdays that offer at least one drop-off window — drives the calendar's "no windows" hint.
-  const weekdayWindows = hours.map((h) => ({
-    dayOfWeek: h.dayOfWeek,
-    hasWindow: h.isOpen && (h.morningEnabled || h.eveningEnabled),
-  }));
-
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       {/* Drop-off Windows */}
@@ -113,8 +102,9 @@ export function ScheduleManager({
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            These set which drop-off windows and times each weekday offers once you open a date
-            for booking. Uncheck a window to hide it for that day (e.g. evenings off on Saturday).
+            These are the <strong>default</strong> windows seeded onto a date when you first open
+            it for booking. After a date is open you can fine-tune its windows individually under
+            Available Dates. Uncheck a window to leave it off by default (e.g. evenings on Saturday).
           </p>
           {hours.map((h) => (
             <div key={h.dayOfWeek} className="space-y-2 border-b pb-3 last:border-b-0">
@@ -174,67 +164,9 @@ export function ScheduleManager({
           <CardTitle className="text-base">Available Dates</CardTitle>
         </CardHeader>
         <CardContent>
-          <AvailableDatesCalendar
-            initialDates={initialAvailableDates.map((d) => d.date)}
-            weekdayWindows={weekdayWindows}
-          />
+          <AvailableDatesCalendar initialDates={initialAvailableDates} />
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-function WindowRow({
-  label,
-  enabled,
-  start,
-  end,
-  fallbackStart,
-  fallbackEnd,
-  onToggle,
-  onStart,
-  onEnd,
-}: {
-  label: string;
-  enabled: boolean;
-  start: string | null;
-  end: string | null;
-  fallbackStart: string;
-  fallbackEnd: string;
-  onToggle: (enabled: boolean) => void;
-  onStart: (value: string) => void;
-  onEnd: (value: string) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <label className="flex items-center gap-2 w-24">
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => onToggle(e.target.checked)}
-          className="rounded"
-        />
-        <span className="text-sm">{label}</span>
-      </label>
-      {enabled ? (
-        <div className="flex items-center gap-2">
-          <Input
-            type="time"
-            value={start ?? fallbackStart}
-            onChange={(e) => onStart(e.target.value)}
-            className="w-28"
-          />
-          <span className="text-sm text-muted-foreground">to</span>
-          <Input
-            type="time"
-            value={end ?? fallbackEnd}
-            onChange={(e) => onEnd(e.target.value)}
-            className="w-28"
-          />
-        </div>
-      ) : (
-        <span className="text-sm text-muted-foreground">Off</span>
-      )}
     </div>
   );
 }

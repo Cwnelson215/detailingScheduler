@@ -1,16 +1,18 @@
 import { db } from "@/db";
-import { businessHours, availableDates, bookings } from "@/db/schema";
+import { availableDates, bookings } from "@/db/schema";
 import { eq, and, gte, lte, asc, sql } from "drizzle-orm";
 import { windowLabel, type DropoffWindow, type WindowOption } from "./format";
 
 export type { DropoffWindow, WindowOption };
 
-// The two fixed windows, in display order, paired with their business_hours columns.
+// The two fixed windows, in display order, paired with their available_dates columns. Window
+// config is per-date (seeded from the weekday template at open time, then editable per date).
+type WindowSource = typeof availableDates.$inferSelect;
 type WindowDef = {
   key: DropoffWindow;
-  enabled: (h: typeof businessHours.$inferSelect) => boolean;
-  start: (h: typeof businessHours.$inferSelect) => string | null;
-  end: (h: typeof businessHours.$inferSelect) => string | null;
+  enabled: (h: WindowSource) => boolean;
+  start: (h: WindowSource) => string | null;
+  end: (h: WindowSource) => string | null;
 };
 
 const WINDOWS: WindowDef[] = [
@@ -24,18 +26,13 @@ function hhmm(t: string): string {
 }
 
 // Customer-facing list of drop-off windows for a date: which windows the day offers and
-// whether each is still free. Empty when the date hasn't been opened by the admin or the shop
-// is closed. Saturday returns morning-only purely from the data (no day-of-week special-casing).
+// whether each is still free. Empty when the date hasn't been opened by the admin or has no
+// enabled window. Windows come from the date's own row (per-date, not the weekday template).
 export async function getWindowOptions(dateStr: string): Promise<WindowOption[]> {
-  const dayOfWeek = new Date(dateStr + "T00:00:00").getDay();
-
   // Allowlist: a date is bookable only if the admin has opened it.
   const open = await db.select().from(availableDates).where(eq(availableDates.date, dateStr));
   if (open.length === 0) return [];
-
-  const hours = await db.select().from(businessHours).where(eq(businessHours.dayOfWeek, dayOfWeek));
-  if (hours.length === 0 || !hours[0].isOpen) return [];
-  const h = hours[0];
+  const h = open[0];
 
   // Windows already taken by a non-cancelled booking on this date.
   const taken = await db
@@ -70,17 +67,9 @@ export async function isWindowAvailable(
   window: DropoffWindow,
   excludeBookingId?: number,
 ): Promise<{ ok: boolean; startTime?: string }> {
-  const dayOfWeek = new Date(dateStr + "T00:00:00").getDay();
-
   const open = await executor.select().from(availableDates).where(eq(availableDates.date, dateStr));
   if (open.length === 0) return { ok: false };
-
-  const hours = await executor
-    .select()
-    .from(businessHours)
-    .where(eq(businessHours.dayOfWeek, dayOfWeek));
-  if (hours.length === 0 || !hours[0].isOpen) return { ok: false };
-  const h = hours[0];
+  const h = open[0];
 
   const def = WINDOWS.find((w) => w.key === window)!;
   const start = def.start(h);

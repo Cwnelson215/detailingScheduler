@@ -6,6 +6,7 @@ import {
   seedService,
   seedBooking,
   markAvailable,
+  setDateWindows,
   setHours,
   futureDateForWeekday,
 } from "@/test/fixtures";
@@ -91,10 +92,47 @@ describe("getWindowOptions", () => {
     expect(options.find((o) => o.key === "morning")?.available).toBe(true);
   });
 
-  it("reflects an admin disabling a window", async () => {
-    await setHours(1, { eveningEnabled: false });
+  it("reflects an admin disabling a window on that date", async () => {
+    await setDateWindows(MONDAY, { eveningEnabled: false });
     const options = await getWindowOptions(MONDAY);
     expect(options.map((o) => o.key)).toEqual(["morning"]);
+  });
+});
+
+describe("per-date windows", () => {
+  it("seeds a newly opened date with its weekday's windows", async () => {
+    // SATURDAY is morning-only in the seeded template; opening it copies that.
+    const options = await getWindowOptions(SATURDAY);
+    expect(options.map((o) => o.key)).toEqual(["morning"]);
+  });
+
+  it("offers windows on a date whose closed weekday has none, once set per date", async () => {
+    // Sunday's template is closed, so SUNDAY seeded no windows. Setting them per date opens it.
+    expect(await getWindowOptions(SUNDAY)).toEqual([]);
+    await setDateWindows(SUNDAY, {
+      morningEnabled: true,
+      morningStart: "08:00",
+      morningEnd: "10:00",
+    });
+    const options = await getWindowOptions(SUNDAY);
+    expect(options.map((o) => o.key)).toEqual(["morning"]);
+    expect(options[0]).toMatchObject({ startTime: "08:00", endTime: "10:00" });
+    expect(await isWindowAvailable(db, SUNDAY, "morning")).toEqual({ ok: true, startTime: "08:00" });
+  });
+
+  it("is authoritative over the weekday template after opening", async () => {
+    // Changing the weekday template must NOT change an already-opened date's windows.
+    await setHours(1, { eveningEnabled: false, eveningStart: null, eveningEnd: null });
+    const options = await getWindowOptions(MONDAY);
+    expect(options.map((o) => o.key)).toEqual(["morning", "evening"]);
+  });
+
+  it("lets one date differ from others on the same weekday", async () => {
+    const otherMonday = futureDateForWeekday(1, 35);
+    await markAvailable(otherMonday);
+    await setDateWindows(MONDAY, { eveningEnabled: false });
+    expect((await getWindowOptions(MONDAY)).map((o) => o.key)).toEqual(["morning"]);
+    expect((await getWindowOptions(otherMonday)).map((o) => o.key)).toEqual(["morning", "evening"]);
   });
 });
 

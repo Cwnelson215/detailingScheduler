@@ -162,6 +162,27 @@ export const businessHoursSchema = z
     path: ["eveningStart"],
   });
 
+// Admin-edited windows for one specific opened date (per-date authoritative). Same window
+// rules as businessHoursSchema, keyed by date instead of weekday.
+export const availableDateWindowsSchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
+    morningEnabled: z.boolean(),
+    morningStart: windowTimeField,
+    morningEnd: windowTimeField,
+    eveningEnabled: z.boolean(),
+    eveningStart: windowTimeField,
+    eveningEnd: windowTimeField,
+  })
+  .refine((d) => !d.morningEnabled || (!!d.morningStart && !!d.morningEnd && d.morningStart < d.morningEnd), {
+    message: "Morning window needs a start before its end",
+    path: ["morningStart"],
+  })
+  .refine((d) => !d.eveningEnabled || (!!d.eveningStart && !!d.eveningEnd && d.eveningStart < d.eveningEnd), {
+    message: "Evening window needs a start before its end",
+    path: ["eveningStart"],
+  });
+
 export const businessInfoSchema = z.object({
   name: z.string().min(1, "Business name is required").max(255),
   address: z.string().max(500).default(""),
