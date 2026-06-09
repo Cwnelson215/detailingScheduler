@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency, formatDuration } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { CalendarPicker } from "@/components/calendar-picker";
 import { WindowPicker } from "@/components/window-picker";
 import { windowRange, type DropoffWindow, type WindowOption } from "@/lib/format";
@@ -152,7 +152,6 @@ export function BookingForm({ services }: { services: Service[] }) {
                   </div>
                   <div className="text-right shrink-0 ml-4">
                     <p className="font-semibold">{formatCurrency(service.priceCents)}<span className="text-muted-foreground">*</span></p>
-                    <p className="text-sm text-muted-foreground">{formatDuration(service.durationMins)}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -298,10 +297,6 @@ export function BookingForm({ services }: { services: Service[] }) {
                     ? `${selectedOption.label} (${windowRange(selectedOption.startTime, selectedOption.endTime)})`
                     : ""}
                 </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Duration</span>
-                <span className="font-medium">{formatDuration(selectedService.durationMins)}</span>
               </div>
               <hr />
               <div className="flex justify-between">

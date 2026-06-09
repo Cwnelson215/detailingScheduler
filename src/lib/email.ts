@@ -80,7 +80,6 @@ function bookingRows(b: BookingEmailInput): [string, string][] {
     ["Price", formatCurrency(b.priceCents)],
     ["Date", formatDate(b.appointmentDate)],
     ["Drop-off", dropoffSummary(b.dropoffWindow, b.appointmentTime)],
-    ["Duration", formatDuration(b.durationMins)],
     ["Vehicle", `${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`],
   ];
 }
@@ -108,7 +107,6 @@ function renderText(b: BookingEmailInput): string {
     `Price:     ${formatCurrency(b.priceCents)}`,
     `Date:      ${formatDate(b.appointmentDate)}`,
     `Drop-off:  ${dropoffSummary(b.dropoffWindow, b.appointmentTime)}`,
-    `Duration:  ${formatDuration(b.durationMins)}`,
     `Vehicle:   ${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`,
     ``,
     ...(b.manageUrl ? [`Manage your booking: ${b.manageUrl}`, ``] : []),
@@ -126,6 +124,7 @@ function renderText(b: BookingEmailInput): string {
 function renderOwnerHtml(b: BookingEmailInput): string {
   const rows: [string, string][] = [
     ...bookingRows(b),
+    ["Duration", formatDuration(b.durationMins)],
     ["Customer", b.customerName],
     ["Email", b.customerEmail],
     ["Phone", b.customerPhone],

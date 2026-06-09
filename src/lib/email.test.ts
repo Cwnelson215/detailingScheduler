@@ -56,7 +56,8 @@ describe("sendBookingConfirmation", () => {
     expect(payload.html).toContain("&lt;b&gt;"); // name escaped, not raw <b>
     expect(payload.html).not.toContain("<b>");
     expect(payload.text).toContain("Booking #: 42");
-    expect(payload.text).toContain("Duration:  5h");
+    expect(payload.text).not.toContain("Duration");
+    expect(payload.html).not.toContain("Duration");
   });
 
   it("skips silently (no throw, no send) when RESEND_API_KEY is unset", async () => {
@@ -74,6 +75,7 @@ describe("sendOwnerNotification", () => {
     expect(payload.to).toBe("owner@example.com");
     expect(payload.replyTo).toBe("jane@example.com");
     expect(payload.html).toContain("jane@example.com");
+    expect(payload.html).toContain("Duration"); // owner still sees job length
   });
 
   it("skips when BOOKING_NOTIFY_EMAIL is unset", async () => {

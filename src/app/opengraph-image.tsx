@@ -26,7 +26,7 @@ export default async function OpengraphImage() {
       >
         <div style={{ fontSize: 38, opacity: 0.85 }}>{info.name}</div>
         <div style={{ fontSize: 74, fontWeight: 700, marginTop: 16, lineHeight: 1.1 }}>
-          Your car deserves the best.
+          Want a deep clean but don&apos;t have the time? Let us help!
         </div>
         <div style={{ fontSize: 32, opacity: 0.9, marginTop: 24 }}>
           Professional detailing — book online in minutes.

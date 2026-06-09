@@ -6,7 +6,7 @@ import { bookings, services } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDuration } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { dropoffSummary } from "@/lib/format";
 import { getBusinessInfo } from "@/lib/business-info";
 import {
@@ -105,7 +105,6 @@ export default async function CustomerBookingViewPage({
                 })}
               />
               <Row label="Drop-off" value={dropoffSummary(booking.dropoffWindow, apptTime)} />
-              <Row label="Duration" value={formatDuration(booking.durationMins)} />
               <hr />
               <Row
                 label="Vehicle"

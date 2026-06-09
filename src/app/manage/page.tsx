@@ -4,7 +4,7 @@ import { bookings, services } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatDuration } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { dropoffSummary } from "@/lib/format";
 import { getBusinessInfo } from "@/lib/business-info";
 import { formatJobId } from "@/lib/job-id";
@@ -111,10 +111,6 @@ export default async function ManageBookingPage({
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Drop-off</span>
                     <span className="font-medium">{dropoffSummary(booking.dropoffWindow, booking.appointmentTime)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Duration</span>
-                    <span className="font-medium">{formatDuration(booking.durationMins)}</span>
                   </div>
                   <hr />
                   <div className="flex justify-between">

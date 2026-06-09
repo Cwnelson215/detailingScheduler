@@ -3,7 +3,6 @@ import { db } from "@/db";
 import { services, businessHours } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { Check } from "lucide-react";
-import { formatDuration } from "@/lib/utils";
 import { windowRange } from "@/lib/format";
 import { getBusinessInfo } from "@/lib/business-info";
 import { ContactForm } from "@/components/contact-form";
@@ -130,7 +129,7 @@ export default async function HomePage() {
               Now booking online
             </span>
             <h1 className="mt-6 text-5xl font-bold leading-[1.05] text-foreground md:text-6xl">
-              Your car deserves the best.
+              Want a deep clean but don&apos;t have the time? Let us help!
             </h1>
             <p className="mt-6 max-w-md text-lg leading-relaxed text-muted-foreground">
               Professional detailing services that bring out the true beauty of your vehicle.
@@ -221,7 +220,6 @@ export default async function HomePage() {
                 className="rounded-2xl border border-border p-8 transition hover:-translate-y-1 hover:shadow-lg hover:shadow-slate-200/60"
               >
                 <h3 className="text-xl font-semibold text-foreground">{tier.name}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">≈ {formatDuration(tier.durationMins)}</p>
                 <div className="mt-5 font-display text-4xl font-bold text-foreground">{dollars(tier.priceCents)}<span className="text-muted-foreground">*</span></div>
                 <Link
                   href="/booking"
