@@ -8,6 +8,8 @@ import { type DropoffWindow, type WindowOption } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { toast } from "@/components/ui/toast";
 
 type BookingView = {
   jobId: string;
@@ -29,14 +31,13 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("none");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const { confirm, dialog } = useConfirm();
 
   const active = booking.status !== "cancelled" && booking.status !== "completed";
   const manageUrl = `/api/jobs/${booking.jobId}/manage`;
 
   async function post(payload: Record<string, unknown>): Promise<boolean> {
     setBusy(true);
-    setError("");
     try {
       const res = await fetch(manageUrl, {
         method: "POST",
@@ -50,7 +51,7 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
       router.refresh();
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      toast.error(err instanceof Error ? err.message : "Something went wrong.");
       return false;
     } finally {
       setBusy(false);
@@ -80,9 +81,16 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
           <Button
             variant="destructive"
             disabled={busy}
-            onClick={() => {
-              if (confirm("Are you sure you want to cancel this appointment?")) {
-                post({ cancel: true });
+            onClick={async () => {
+              const ok = await confirm({
+                title: "Cancel this appointment?",
+                description: "This can't be undone.",
+                confirmLabel: "Cancel appointment",
+                cancelLabel: "Keep it",
+                variant: "destructive",
+              });
+              if (ok && (await post({ cancel: true }))) {
+                toast.success("Appointment cancelled.");
               }
             }}
           >
@@ -95,7 +103,14 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
         <RescheduleForm
           busy={busy}
           onCancel={() => setMode("none")}
-          onSubmit={(appointmentDate, dropoffWindow) => post({ appointmentDate, dropoffWindow })}
+          onSubmit={async (appointmentDate, dropoffWindow) => {
+            const ok = await post({ appointmentDate, dropoffWindow });
+            if (ok) {
+              toast.success("Appointment rescheduled.");
+              setMode("none");
+            }
+            return ok;
+          }}
         />
       )}
 
@@ -104,11 +119,18 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
           booking={booking}
           busy={busy}
           onCancel={() => setMode("none")}
-          onSubmit={(fields) => post(fields)}
+          onSubmit={async (fields) => {
+            const ok = await post(fields);
+            if (ok) {
+              toast.success("Details updated.");
+              setMode("none");
+            }
+            return ok;
+          }}
         />
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {dialog}
     </div>
   );
 }

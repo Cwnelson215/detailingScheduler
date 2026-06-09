@@ -12,9 +12,10 @@ import { ChevronLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-const statusColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const statusColors: Record<string, "default" | "secondary" | "destructive" | "success" | "outline"> = {
   pending: "outline",
   confirmed: "default",
+  ready: "success",
   completed: "secondary",
   cancelled: "destructive",
 };

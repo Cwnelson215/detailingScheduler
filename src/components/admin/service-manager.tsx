@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/dialog";
 import { formatCurrency, formatDuration } from "@/lib/utils";
 import { Loader2, Plus, Pencil, Trash2 } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { toast } from "@/components/ui/toast";
 
 interface Service {
   id: number;
@@ -43,6 +45,7 @@ export function ServiceManager({ initialServices }: { initialServices: Service[]
   const [editing, setEditing] = useState<Service | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
+  const { confirm, dialog } = useConfirm();
 
   const openCreate = () => {
     setEditing(null);
@@ -65,36 +68,60 @@ export function ServiceManager({ initialServices }: { initialServices: Service[]
 
   const handleSave = async () => {
     setLoading(true);
-    if (editing) {
-      await fetch(`/api/services/${editing.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-    } else {
-      await fetch("/api/services", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+    try {
+      const res = editing
+        ? await fetch(`/api/services/${editing.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(form),
+          })
+        : await fetch("/api/services", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(form),
+          });
+      if (!res.ok) {
+        toast.error("Couldn't save the service. Please try again.");
+        return;
+      }
+      toast.success(editing ? "Service updated." : "Service created.");
+      setDialogOpen(false);
+      router.refresh();
+    } catch {
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-    setDialogOpen(false);
-    router.refresh();
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Delete this service? Existing bookings will keep their reference.")) return;
-    await fetch(`/api/services/${id}`, { method: "DELETE" });
+    const ok = await confirm({
+      title: "Delete this service?",
+      description: "Existing bookings will keep their reference.",
+      confirmLabel: "Delete service",
+      variant: "destructive",
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/services/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      toast.error("Couldn't delete the service. Please try again.");
+      return;
+    }
+    toast.success("Service deleted.");
     router.refresh();
   };
 
   const handleToggle = async (s: Service) => {
-    await fetch(`/api/services/${s.id}`, {
+    const res = await fetch(`/api/services/${s.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !s.isActive }),
     });
+    if (!res.ok) {
+      toast.error("Couldn't update the service. Please try again.");
+      return;
+    }
+    toast.success(s.isActive ? "Service deactivated." : "Service activated.");
     router.refresh();
   };
 
@@ -199,6 +226,7 @@ export function ServiceManager({ initialServices }: { initialServices: Service[]
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {dialog}
     </>
   );
 }

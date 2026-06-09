@@ -295,13 +295,18 @@ export async function sendVerificationCode(input: VerificationCodeInput): Promis
   }
 }
 
-type BookingStatusKind = "confirmed" | "cancelled" | "rescheduled" | "reminder";
+type BookingStatusKind = "confirmed" | "ready" | "cancelled" | "rescheduled" | "reminder";
 
 const statusCopy: Record<BookingStatusKind, { heading: string; subject: string; intro: string }> = {
   confirmed: {
     heading: "Booking Confirmed",
     subject: "your appointment is confirmed",
     intro: "your appointment is confirmed. Here are the details:",
+  },
+  ready: {
+    heading: "Your Car Is Ready for Pickup",
+    subject: "your car is ready for pickup",
+    intro: "good news — your car is finished and ready to be picked up. Here are the details:",
   },
   cancelled: {
     heading: "Booking Cancelled",
@@ -542,7 +547,7 @@ type StatusNotifyBooking = {
 
 export async function notifyBookingStatus(
   booking: StatusNotifyBooking,
-  kind: "confirmed" | "cancelled" | "rescheduled",
+  kind: "confirmed" | "ready" | "cancelled" | "rescheduled",
 ): Promise<void> {
   try {
     const [service] = await db

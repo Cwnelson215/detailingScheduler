@@ -4,16 +4,25 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { toast } from "@/components/ui/toast";
 
 export function ManageActions({ token }: { token: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const { confirm, dialog } = useConfirm();
 
   const handleCancel = async () => {
-    if (!window.confirm("Cancel this appointment? This can't be undone.")) return;
+    const ok = await confirm({
+      title: "Cancel this appointment?",
+      description: "This can't be undone.",
+      confirmLabel: "Cancel appointment",
+      cancelLabel: "Keep it",
+      variant: "destructive",
+    });
+    if (!ok) return;
+
     setLoading(true);
-    setError("");
     try {
       const res = await fetch("/api/bookings/manage", {
         method: "POST",
@@ -22,12 +31,15 @@ export function ManageActions({ token }: { token: string }) {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(typeof data.error === "string" ? data.error : "Could not cancel. Please try again.");
+        toast.error(
+          typeof data.error === "string" ? data.error : "Could not cancel. Please try again.",
+        );
         return;
       }
+      toast.success("Appointment cancelled.");
       router.refresh();
     } catch {
-      setError("Something went wrong. Please try again.");
+      toast.error("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -39,7 +51,7 @@ export function ManageActions({ token }: { token: string }) {
         {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
         Cancel appointment
       </Button>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {dialog}
     </div>
   );
 }

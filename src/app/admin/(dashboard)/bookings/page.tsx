@@ -7,12 +7,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
 import { dropoffSummary } from "@/lib/format";
+import { MarkReadyButton } from "@/components/admin/mark-ready-button";
 
 export const dynamic = "force-dynamic";
 
-const statusColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const statusColors: Record<string, "default" | "secondary" | "destructive" | "success" | "outline"> = {
   pending: "outline",
   confirmed: "default",
+  ready: "success",
   completed: "secondary",
   cancelled: "destructive",
 };
@@ -49,7 +51,7 @@ export default async function AdminBookingsPage({
     ? await query.where(eq(bookings.status, statusFilter))
     : await query;
 
-  const statuses = ["all", "pending", "confirmed", "completed", "cancelled"];
+  const statuses = ["all", "pending", "confirmed", "ready", "completed", "cancelled"];
 
   return (
     <div className="space-y-6">
@@ -84,12 +86,13 @@ export default async function AdminBookingsPage({
                 <TableHead>Vehicle</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Price</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {allBookings.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     No bookings found.
                   </TableCell>
                 </TableRow>
@@ -116,6 +119,9 @@ export default async function AdminBookingsPage({
                       <Badge variant={statusColors[b.status]}>{b.status}</Badge>
                     </TableCell>
                     <TableCell className="text-right">{formatCurrency(b.priceCents)}</TableCell>
+                    <TableCell className="text-right">
+                      <MarkReadyButton bookingId={b.id} currentStatus={b.status} />
+                    </TableCell>
                   </TableRow>
                 ))
               )}

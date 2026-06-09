@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Sora } from "next/font/google";
 import "./globals.css";
 import { getBusinessInfo } from "@/lib/business-info";
+import { Toaster } from "@/components/ui/toast";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -69,6 +70,7 @@ export default async function RootLayout({
     <html lang="en" className={`${inter.variable} ${sora.variable}`}>
       <body className="min-h-screen antialiased">
         {children}
+        <Toaster />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

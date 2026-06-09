@@ -76,6 +76,7 @@ export async function PATCH(
     await notifyBookingStatus(updated, "rescheduled");
   } else if (updates.status && updates.status !== existing.status) {
     if (updates.status === "confirmed") await notifyBookingStatus(updated, "confirmed");
+    else if (updates.status === "ready") await notifyBookingStatus(updated, "ready");
     else if (updates.status === "cancelled") await notifyBookingStatus(updated, "cancelled");
   }
 

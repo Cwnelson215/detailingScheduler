@@ -37,7 +37,7 @@ const timeOfDayField = z
 // time from the day's business_hours, so the booking payload only carries the window key.
 export const dropoffWindowField = z.enum(["morning", "evening"]);
 
-export const bookingStatusValues = ["pending", "confirmed", "completed", "cancelled"] as const;
+export const bookingStatusValues = ["pending", "confirmed", "ready", "completed", "cancelled"] as const;
 
 export const bookingSchema = z.object({
   serviceId: z.number().int().positive(),

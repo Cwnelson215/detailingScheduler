@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   if (existing.status === "cancelled") {
     return Response.json({ status: "cancelled" });
   }
-  if (existing.status === "completed") {
+  if (existing.status === "ready" || existing.status === "completed") {
     return Response.json(
       { error: "This booking can no longer be cancelled." },
       { status: 409 },

@@ -17,9 +17,10 @@ function formatTime(time: string): string {
   return `${display}:${m} ${ampm}`;
 }
 
-const statusColors: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const statusColors: Record<string, "default" | "secondary" | "destructive" | "success" | "outline"> = {
   pending: "outline",
   confirmed: "default",
+  ready: "success",
   completed: "secondary",
   cancelled: "destructive",
 };
