@@ -6,6 +6,7 @@ import {
   serviceSchema,
   serviceUpdateSchema,
   businessHoursSchema,
+  businessInfoSchema,
   changePasswordSchema,
 } from "@/lib/validations";
 
@@ -45,6 +46,29 @@ describe("bookingSchema", () => {
     expect(
       bookingSchema.safeParse({ ...base, appointmentDate: futureDate(), customerPhone: "abc" }).success,
     ).toBe(false);
+  });
+  it("rejects a 7-digit (non-US) phone number", () => {
+    expect(
+      bookingSchema.safeParse({ ...base, appointmentDate: futureDate(), customerPhone: "1234567" }).success,
+    ).toBe(false);
+  });
+  it("normalizes a raw 10-digit phone to the canonical format", () => {
+    const parsed = bookingSchema.safeParse({
+      ...base,
+      appointmentDate: futureDate(),
+      customerPhone: "5551234567",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.customerPhone).toBe("(555) 123-4567");
+  });
+  it("trims and lowercases the email", () => {
+    const parsed = bookingSchema.safeParse({
+      ...base,
+      appointmentDate: futureDate(),
+      customerEmail: "  Jane@Example.COM ",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.customerEmail).toBe("jane@example.com");
   });
 });
 
@@ -133,6 +157,19 @@ describe("businessHoursSchema", () => {
     ).toBe(false));
   it("rejects an out-of-range dayOfWeek", () =>
     expect(businessHoursSchema.safeParse({ ...weekday, dayOfWeek: 7 }).success).toBe(false));
+});
+
+describe("businessInfoSchema", () => {
+  const valid = { name: "Nelson Detailing", address: "123 Lane", phone: "(555) 123-4567" };
+  it("accepts a valid record and normalizes the phone", () => {
+    const parsed = businessInfoSchema.safeParse({ ...valid, phone: "5551234567" });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.phone).toBe("(555) 123-4567");
+  });
+  it("allows a blank phone", () =>
+    expect(businessInfoSchema.safeParse({ ...valid, phone: "" }).success).toBe(true));
+  it("rejects an invalid non-empty phone", () =>
+    expect(businessInfoSchema.safeParse({ ...valid, phone: "555" }).success).toBe(false));
 });
 
 describe("changePasswordSchema", () => {

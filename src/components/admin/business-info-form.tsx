@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+import { formatPhone } from "@/lib/format";
 
 type Initial = { name: string; address: string; phone: string };
 
@@ -79,8 +80,10 @@ export function BusinessInfoForm({ initial }: { initial: Initial }) {
             <Label htmlFor="biz-phone">Phone</Label>
             <Input
               id="biz-phone"
+              type="tel"
+              inputMode="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(formatPhone(e.target.value))}
               maxLength={50}
               placeholder="(555) 123-4567"
             />

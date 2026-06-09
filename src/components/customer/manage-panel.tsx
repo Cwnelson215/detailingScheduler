@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPicker } from "@/components/calendar-picker";
 import { WindowPicker } from "@/components/window-picker";
-import { type DropoffWindow, type WindowOption } from "@/lib/format";
+import { formatPhone, type DropoffWindow, type WindowOption } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -233,7 +233,7 @@ function EditDetailsForm({
         </div>
         <div>
           <Label htmlFor="customerPhone">Phone</Label>
-          <Input id="customerPhone" value={form.customerPhone} onChange={(e) => set("customerPhone", e.target.value)} />
+          <Input id="customerPhone" type="tel" inputMode="tel" value={form.customerPhone} onChange={(e) => set("customerPhone", formatPhone(e.target.value))} placeholder="(555) 123-4567" />
         </div>
         <div>
           <Label htmlFor="vehicleYear">Vehicle year</Label>

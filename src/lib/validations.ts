@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatPhone, isUsPhone } from "./format";
 
 function isRealCalendarDate(s: string): boolean {
   const [y, m, d] = s.split("-").map(Number);
@@ -17,10 +18,19 @@ function isRealTimeOfDay(s: string): boolean {
   return h >= 0 && h <= 23 && m >= 0 && m <= 59;
 }
 
-function hasPlausiblePhoneDigits(p: string): boolean {
-  const digits = p.replace(/\D/g, "");
-  return digits.length >= 7 && digits.length <= 15;
-}
+// Email is normalized at the schema boundary (trim + lowercase) so storage and the
+// case-insensitive lookup/auth comparisons stay consistent. See normalizeEmail in
+// lib/customer-session.ts (still used on the lookup path).
+const emailField = z.string().trim().toLowerCase().email("Invalid email address");
+
+// Required US phone: validates exactly 10 digits, then stores the canonical "(555) 123-4567"
+// form regardless of how it was typed (the client masks to the same shape).
+const usPhoneField = z
+  .string()
+  .min(1, "Phone is required")
+  .max(50)
+  .refine(isUsPhone, "Enter a valid 10-digit US phone number")
+  .transform(formatPhone);
 
 const appointmentDateField = z
   .string()
@@ -42,12 +52,8 @@ export const bookingStatusValues = ["pending", "confirmed", "ready", "completed"
 export const bookingSchema = z.object({
   serviceId: z.number().int().positive(),
   customerName: z.string().min(1, "Name is required").max(255),
-  customerEmail: z.string().email("Invalid email address"),
-  customerPhone: z
-    .string()
-    .min(1, "Phone is required")
-    .max(50)
-    .refine(hasPlausiblePhoneDigits, "Enter a valid phone number"),
+  customerEmail: emailField,
+  customerPhone: usPhoneField,
   vehicleYear: z.string().regex(/^\d{4}$/, "Must be a 4-digit year"),
   vehicleMake: z.string().min(1, "Make is required").max(100),
   vehicleModel: z.string().min(1, "Model is required").max(100),
@@ -69,7 +75,7 @@ export const bookingUpdateSchema = z
 // Customer looks up their bookings with just the email on file (view tier). Managing a
 // booking then requires the Job ID + an emailed code (see verifyCodeSchema).
 export const lookupSchema = z.object({
-  email: z.string().email("Invalid email address"),
+  email: emailField,
 });
 
 // Step-up: the 6-digit one-time code emailed to the booking's address. The Job ID comes
@@ -86,13 +92,8 @@ export const customerManageSchema = z
     appointmentDate: appointmentDateField.optional(),
     dropoffWindow: dropoffWindowField.optional(),
     customerName: z.string().min(1, "Name is required").max(255).optional(),
-    customerEmail: z.string().email("Invalid email address").optional(),
-    customerPhone: z
-      .string()
-      .min(1, "Phone is required")
-      .max(50)
-      .refine(hasPlausiblePhoneDigits, "Enter a valid phone number")
-      .optional(),
+    customerEmail: emailField.optional(),
+    customerPhone: usPhoneField.optional(),
     vehicleYear: z.string().regex(/^\d{4}$/, "Must be a 4-digit year").optional(),
     vehicleMake: z.string().min(1, "Make is required").max(100).optional(),
     vehicleModel: z.string().min(1, "Model is required").max(100).optional(),
@@ -106,7 +107,7 @@ export const chatMessageSchema = z.object({
 
 export const contactSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
-  email: z.string().email("Invalid email address"),
+  email: emailField,
   message: z.string().min(1, "Message is required").max(2000),
 });
 
@@ -186,7 +187,14 @@ export const availableDateWindowsSchema = z
 export const businessInfoSchema = z.object({
   name: z.string().min(1, "Business name is required").max(255),
   address: z.string().max(500).default(""),
-  phone: z.string().max(50).default(""),
+  // Optional: blank is allowed, but a non-empty value must be a valid US phone and is
+  // normalized to the canonical "(555) 123-4567" form.
+  phone: z
+    .string()
+    .max(50)
+    .default("")
+    .refine((p) => p === "" || isUsPhone(p), "Enter a valid 10-digit US phone number")
+    .transform((p) => (p ? formatPhone(p) : p)),
 });
 
 export const changePasswordSchema = z

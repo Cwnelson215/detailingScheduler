@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
 import { CalendarPicker } from "@/components/calendar-picker";
 import { WindowPicker } from "@/components/window-picker";
-import { windowRange, type DropoffWindow, type WindowOption } from "@/lib/format";
+import { formatPhone, windowRange, type DropoffWindow, type WindowOption } from "@/lib/format";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 interface Service {
@@ -224,8 +224,10 @@ export function BookingForm({ services }: { services: Service[] }) {
                 <Input
                   id="phone"
                   type="tel"
+                  inputMode="tel"
                   value={form.customerPhone}
-                  onChange={(e) => setForm({ ...form, customerPhone: e.target.value })}
+                  onChange={(e) => setForm({ ...form, customerPhone: formatPhone(e.target.value) })}
+                  placeholder="(555) 123-4567"
                 />
               </div>
             </div>

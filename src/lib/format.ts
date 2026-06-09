@@ -41,3 +41,19 @@ export function dropoffSummary(w: DropoffWindow, startTime: string): string {
 export function windowRange(startTime: string, endTime: string): string {
   return `${formatTime(startTime)} – ${formatTime(endTime)}`;
 }
+
+// "5551234567" -> "(555) 123-4567". Doubles as the live input mask (formats partials as the
+// user types) and the canonical normalizer applied before storage. US 10-digit only; digits
+// past the tenth are dropped. Used by the booking/manage/admin phone fields and the
+// validation layer (so the stored value is identical regardless of how it was typed).
+export function formatPhone(input: string): string {
+  const d = input.replace(/\D/g, "").slice(0, 10);
+  if (d.length < 4) return d;
+  if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
+// True when the input contains exactly 10 digits (US phone), ignoring formatting characters.
+export function isUsPhone(input: string): boolean {
+  return input.replace(/\D/g, "").length === 10;
+}

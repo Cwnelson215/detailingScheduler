@@ -72,6 +72,23 @@ function tableHtml(rows: [string, string][]): string {
   </table>`;
 }
 
+// The business address is stored multi-line (e.g. "123 Detail Lane\nYour City, ST 12345"),
+// so it can't go in the single-cell bookingRows table — newlines would collapse. Render it
+// as its own block instead. Returns "" when no address is configured.
+function locationHtml(address: string): string {
+  if (!address.trim()) return "";
+  const lines = address.split("\n").map(escapeHtml).join("<br>");
+  return `<div style="margin-top:16px;">
+    <div style="color:#666;font-size:13px;">Drop-off location</div>
+    <div style="font-weight:600;margin-top:2px;">${lines}</div>
+  </div>`;
+}
+
+function locationText(address: string): string {
+  if (!address.trim()) return "";
+  return `Drop-off location:\n${address}`;
+}
+
 function bookingRows(b: BookingEmailInput): [string, string][] {
   return [
     ["Booking #", String(b.bookingId)],
@@ -84,19 +101,20 @@ function bookingRows(b: BookingEmailInput): [string, string][] {
   ];
 }
 
-function renderHtml(b: BookingEmailInput): string {
+function renderHtml(b: BookingEmailInput, address: string): string {
   return `<!doctype html>
 <html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
   <h1 style="font-size:22px;margin-bottom:4px;">Booking Confirmed</h1>
   <p style="color:#555;margin-top:0;">Thanks ${escapeHtml(b.customerName)} — your appointment is on the books.</p>
   ${tableHtml(bookingRows(b))}
+  ${locationHtml(address)}
   ${b.manageUrl ? `<p style="color:#555;margin-top:24px;">Need to make a change? <a href="${b.manageUrl}">Manage your booking</a>.</p>` : ""}
   ${b.jobId ? `<p style="color:#555;margin-top:8px;">Look up your booking anytime with this email at <a href="${siteUrl()}/lookup">${siteUrl()}/lookup</a>. To reschedule, cancel, or message us, you'll enter your Job ID <strong>${escapeHtml(b.jobId)}</strong> and a code we email you — so keep this Job ID handy.</p>` : ""}
   <p style="color:#555;margin-top:24px;">We'll reach out at ${escapeHtml(b.customerPhone)} if anything changes. Reply to this email with questions.</p>
 </body></html>`;
 }
 
-function renderText(b: BookingEmailInput): string {
+function renderText(b: BookingEmailInput, address: string): string {
   return [
     `Booking Confirmed`,
     ``,
@@ -109,6 +127,7 @@ function renderText(b: BookingEmailInput): string {
     `Drop-off:  ${dropoffSummary(b.dropoffWindow, b.appointmentTime)}`,
     `Vehicle:   ${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`,
     ``,
+    ...(locationText(address) ? [locationText(address), ``] : []),
     ...(b.manageUrl ? [`Manage your booking: ${b.manageUrl}`, ``] : []),
     ...(b.jobId
       ? [
@@ -164,7 +183,7 @@ export async function sendBookingConfirmation(input: BookingEmailInput): Promise
     return;
   }
 
-  const { name: businessName } = await getBusinessInfo();
+  const { name: businessName, address } = await getBusinessInfo();
   const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
   const replyTo = process.env.EMAIL_REPLY_TO;
 
@@ -173,8 +192,8 @@ export async function sendBookingConfirmation(input: BookingEmailInput): Promise
     to: input.customerEmail,
     ...(replyTo ? { replyTo } : {}),
     subject: `${businessName} — booking confirmed for ${formatDate(input.appointmentDate)} (${windowName(input.dropoffWindow)} drop-off)`,
-    html: renderHtml(input),
-    text: renderText(input),
+    html: renderHtml(input, address),
+    text: renderText(input, address),
   });
 
   if (error) {
@@ -339,15 +358,20 @@ export async function sendBookingStatusUpdate(
   }
 
   const copy = statusCopy[kind];
-  const { name: businessName } = await getBusinessInfo();
+  const { name: businessName, address } = await getBusinessInfo();
   const from = process.env.EMAIL_FROM || "onboarding@resend.dev";
   const replyTo = process.env.EMAIL_REPLY_TO;
+
+  // A cancelled appointment has no drop-off, so omit the location there; every other status
+  // (confirmed/ready/rescheduled/reminder) still tells the customer where to go.
+  const showLocation = kind !== "cancelled";
 
   const html = `<!doctype html>
 <html><body style="font-family:system-ui,sans-serif;color:#111;max-width:560px;margin:0 auto;padding:24px;">
   <h1 style="font-size:22px;margin-bottom:4px;">${copy.heading}</h1>
   <p style="color:#555;margin-top:0;">Hi ${escapeHtml(input.customerName)} — ${copy.intro}</p>
   ${tableHtml(bookingRows(input))}
+  ${showLocation ? locationHtml(address) : ""}
   <p style="color:#555;margin-top:24px;">Questions? Just reply to this email.</p>
 </body></html>`;
 
@@ -358,6 +382,7 @@ export async function sendBookingStatusUpdate(
     ``,
     ...bookingRows(input).map(([k, v]) => `${k}: ${v}`),
     ``,
+    ...(showLocation && locationText(address) ? [locationText(address), ``] : []),
     `Questions? Just reply to this email.`,
   ].join("\n");
 

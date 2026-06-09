@@ -17,7 +17,22 @@ vi.mock("@/lib/business-info", () => ({
   getBusinessInfo: vi.fn(async () => ({ name: "Nelson Detailing", address: "", phone: "" })),
 }));
 
-import { sendBookingConfirmation, sendOwnerNotification } from "@/lib/email";
+import {
+  sendBookingConfirmation,
+  sendOwnerNotification,
+  sendBookingStatusUpdate,
+} from "@/lib/email";
+import { getBusinessInfo } from "@/lib/business-info";
+
+const ADDRESS = "123 Detail Lane, Suite 100\nYour City, ST 12345";
+
+function withAddress(address: string) {
+  vi.mocked(getBusinessInfo).mockResolvedValue({
+    name: "Nelson Detailing",
+    address,
+    phone: "",
+  });
+}
 
 const base = {
   bookingId: 42,
@@ -38,6 +53,8 @@ const base = {
 beforeEach(() => {
   sendMock.mockReset();
   sendMock.mockResolvedValue({ error: null });
+  // Reset to the no-address default; individual tests opt in via withAddress().
+  vi.mocked(getBusinessInfo).mockResolvedValue({ name: "Nelson Detailing", address: "", phone: "" });
   process.env.RESEND_API_KEY = "test-key";
   process.env.BOOKING_NOTIFY_EMAIL = "owner@example.com";
   delete process.env.EMAIL_FROM;
@@ -60,10 +77,45 @@ describe("sendBookingConfirmation", () => {
     expect(payload.html).not.toContain("Duration");
   });
 
+  it("includes the drop-off location when an address is configured", async () => {
+    withAddress(ADDRESS);
+    await sendBookingConfirmation(base);
+    const payload = sendMock.mock.calls[0][0];
+    expect(payload.html).toContain("Drop-off location");
+    // Multi-line address renders with <br> in HTML and newlines in text.
+    expect(payload.html).toContain("123 Detail Lane, Suite 100<br>Your City, ST 12345");
+    expect(payload.text).toContain("Drop-off location:\n123 Detail Lane, Suite 100\nYour City, ST 12345");
+  });
+
+  it("omits the location block when no address is configured", async () => {
+    await sendBookingConfirmation(base);
+    const payload = sendMock.mock.calls[0][0];
+    expect(payload.html).not.toContain("Drop-off location");
+    expect(payload.text).not.toContain("Drop-off location");
+  });
+
   it("skips silently (no throw, no send) when RESEND_API_KEY is unset", async () => {
     delete process.env.RESEND_API_KEY;
     await expect(sendBookingConfirmation(base)).resolves.toBeUndefined();
     expect(sendMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendBookingStatusUpdate", () => {
+  it("includes the location for a non-cancelled status", async () => {
+    withAddress(ADDRESS);
+    await sendBookingStatusUpdate(base, "rescheduled");
+    const payload = sendMock.mock.calls[0][0];
+    expect(payload.html).toContain("Drop-off location");
+    expect(payload.text).toContain("Drop-off location:");
+  });
+
+  it("omits the location for a cancelled status", async () => {
+    withAddress(ADDRESS);
+    await sendBookingStatusUpdate(base, "cancelled");
+    const payload = sendMock.mock.calls[0][0];
+    expect(payload.html).not.toContain("Drop-off location");
+    expect(payload.text).not.toContain("Drop-off location");
   });
 });
 
@@ -76,6 +128,13 @@ describe("sendOwnerNotification", () => {
     expect(payload.replyTo).toBe("jane@example.com");
     expect(payload.html).toContain("jane@example.com");
     expect(payload.html).toContain("Duration"); // owner still sees job length
+  });
+
+  it("never includes the drop-off location (owner knows their own address)", async () => {
+    withAddress(ADDRESS);
+    await sendOwnerNotification(base);
+    const payload = sendMock.mock.calls[0][0];
+    expect(payload.html).not.toContain("Drop-off location");
   });
 
   it("skips when BOOKING_NOTIFY_EMAIL is unset", async () => {
