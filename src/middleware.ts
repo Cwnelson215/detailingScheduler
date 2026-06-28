@@ -21,6 +21,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith("/api/services") && request.method !== "GET" ||
     pathname.startsWith("/api/schedule") && request.method !== "GET" ||
+    pathname.startsWith("/api/admin") && request.method !== "GET" ||
     pathname.startsWith("/api/bookings") && (request.method === "PATCH" || request.method === "DELETE")
   ) {
     const token = await getToken({ req: request, secret });
@@ -34,5 +35,11 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/services/:path*", "/api/schedule/:path*", "/api/bookings/:path*"],
+  matcher: [
+    "/admin/:path*",
+    "/api/services/:path*",
+    "/api/schedule/:path*",
+    "/api/admin/:path*",
+    "/api/bookings/:path*",
+  ],
 };

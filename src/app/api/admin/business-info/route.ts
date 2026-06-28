@@ -1,19 +1,16 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { adminSettings } from "@/db/schema";
-import { authOptions } from "@/lib/auth";
+import { requireAdmin } from "@/lib/require-admin";
 import { businessInfoSchema } from "@/lib/validations";
 import { BUSINESS_INFO_KEYS } from "@/lib/business-info";
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = await requireAdmin();
+  if (denied) return denied;
 
   const body = await request.json();
   const parsed = businessInfoSchema.safeParse(body);

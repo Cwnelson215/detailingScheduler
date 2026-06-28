@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { rateLimit, clientIpFromHeaders } from "@/lib/rate-limit";
+import {
+  rateLimit,
+  clientIpFromHeaders,
+  __resetRateLimitState,
+  __windowCount,
+} from "@/lib/rate-limit";
 
 describe("rateLimit", () => {
   it("allows up to the limit, then blocks", () => {
@@ -29,6 +34,25 @@ describe("rateLimit", () => {
     expect(rateLimit(a, 1, 60_000)).toBe(true);
     expect(rateLimit(a, 1, 60_000)).toBe(false);
     expect(rateLimit(b, 1, 60_000)).toBe(true);
+  });
+
+  it("evicts expired windows so the Map can't grow unbounded", () => {
+    vi.useFakeTimers();
+    try {
+      __resetRateLimitState();
+      // SWEEP_EVERY is 1000: fill just under the threshold with short-lived windows.
+      for (let i = 0; i < 999; i++) rateLimit(`evict-${i}`, 1, 1000);
+      expect(__windowCount()).toBe(999);
+
+      // Let them all expire, then a single further write trips the periodic sweep.
+      vi.advanceTimersByTime(1001);
+      rateLimit("evict-trigger", 1, 1000);
+
+      // Everything expired was dropped; only the triggering window remains.
+      expect(__windowCount()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

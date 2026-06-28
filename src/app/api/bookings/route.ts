@@ -1,12 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
 import { db } from "@/db";
 import { bookings, services } from "@/db/schema";
 import { desc, eq, sql } from "drizzle-orm";
-import { authOptions } from "@/lib/auth";
 import { bookingSchema } from "@/lib/validations";
+import { requireAdmin } from "@/lib/require-admin";
 import { isWindowAvailable } from "@/lib/availability";
 import { sendBookingConfirmation, sendOwnerNotification } from "@/lib/email";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
@@ -14,10 +13,8 @@ import { addTrustedBooking } from "@/lib/customer-session";
 import { logger } from "@/lib/logger";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = await requireAdmin();
+  if (denied) return denied;
 
   const result = await db
     .select({

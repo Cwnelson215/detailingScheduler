@@ -49,6 +49,7 @@ npm run destroy          # pulumi destroy
 - `k8s/base/service.yaml` — ClusterIP, port 80 → container 3000.
 - `k8s/base/ingress.yaml` — Traefik ingress for `detailing.cwnel.com`, TLS from the `detailing-tls` Secret.
 - `k8s/base/certificate.yaml` — cert-manager `Certificate` for `detailing.cwnel.com`, issued by the `letsencrypt-prod` ClusterIssuer.
+- `k8s/base/reminder-cronjob.yaml` — `CronJob` `detailing-reminders` (daily at 14:00 UTC) that `POST`s to `http://detailing/api/cron/reminders` with a bearer token from `CRON_SECRET` (in `app-secrets`) to send appointment-reminder emails.
 - `k8s/overlays/prod/kustomization.yaml` — sets namespace `detailing` and image `ghcr.io/cwnelson215/detailing`.
 
 **Legacy infra (`index.ts`):** Pulumi definition of the old AWS stack (ECR repo `portfolio/detailing`, ECS Fargate task/service, ALB target group + host rule, security group, scheduled scaling). Kept for reference; superseded by `k8s/`.
@@ -154,7 +155,7 @@ Run `npm run test` + `npm run typecheck` from `src/` before pushing.
 - `src/components/` — booking form, calendar/time-slot pickers, admin components, UI primitives
 - `src/.env.example` — documented environment variables
 - `Dockerfile` — multi-stage `node:20-alpine`, Next.js standalone, non-root, EXPOSE 3000
-- `k8s/base/`, `k8s/overlays/prod/` — kustomize manifests (active deploy)
+- `k8s/base/`, `k8s/overlays/prod/` — kustomize manifests (active deploy); base includes `deployment.yaml`, `service.yaml`, `ingress.yaml`, `certificate.yaml`, and `reminder-cronjob.yaml`
 - `.github/workflows/deploy.yml` — CI/CD pipeline
 - **Legacy (AWS/Pulumi, unused by CI):** `index.ts`, `Pulumi.yaml`, `Pulumi.dev.yaml`
 
@@ -178,4 +179,5 @@ is done):
 
 - **Admin bookings pagination** — the admin bookings server component and `GET /api/bookings` fetch all rows; add LIMIT/OFFSET (or cursor) + paging UI as booking volume grows.
 - **Audit trail** — no `audit_events` table; sensitive admin actions (password change, booking status changes, business-info edits, cancellations) are unrecorded.
-- **Persistent rate limiting** — `src/lib/rate-limit.ts` is in-memory and resets on pod restart/deploy; move to a Postgres-backed store (no Redis in-cluster) if the brute-force-window-on-deploy gap matters.
+- **Persistent rate limiting** — `src/lib/rate-limit.ts` is in-memory and resets on pod restart/deploy; move to a Postgres-backed store (no Redis in-cluster) if the brute-force-window-on-deploy gap matters. (The limiter now evicts expired windows so the Map stays bounded — the remaining gap is just cross-restart/replica persistence.)
+- **DB TLS verification** — `DB_SSL_REJECT_UNAUTHORIZED=false` (in `k8s/base/deployment.yaml`) disables cert validation for the in-cluster CloudNativePG self-signed cert. Low exposure (single-node, in-cluster traffic), but the proper fix is to mount the CNPG CA and set `sslrootcert`/`ca` instead of disabling verification. That CA lives in the `platform` namespace, so it's platform work in `bulbasaur-infra`, not this repo.

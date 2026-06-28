@@ -3,8 +3,17 @@
 // to the code under test. Call resetDb() in a beforeEach.
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { services, bookings, bookingMessages, availableDates, businessHours } from "@/db/schema";
+import { services, bookings, bookingMessages, availableDates, businessHours, adminSettings } from "@/db/schema";
 import { encryptMessage } from "@/lib/crypto";
+
+// A non-default admin password hash (a valid bcrypt hash of "rotated-test-password").
+// runMigrations() seeds the *default* hash, which makes isUsingDefaultAdminPassword()
+// true and (correctly) causes requireAdmin to 403 every admin API. The standard test
+// baseline is a fully-set-up admin who has rotated the password, so resetDb() normalizes
+// to this. A test exercising the default-password gate sets the hash back to
+// DEFAULT_ADMIN_PASSWORD_HASH itself.
+export const ROTATED_PASSWORD_HASH =
+  "$2a$10$xHy.lEe01C2URO8zqnS9qOLHP2aHxEYASqlw.XkZqqEVsjSY0at0C";
 
 // Wipe per-test data and reset identity sequences (so IDs are predictable per test).
 // business_hours is left intact — runMigrations seeds one row per weekday: Mon–Fri offer
@@ -15,6 +24,11 @@ export async function resetDb(): Promise<void> {
   await db.execute(
     sql`TRUNCATE customer_verification_codes, booking_messages, bookings, services, available_dates RESTART IDENTITY CASCADE`,
   );
+  // Treat the admin as having rotated off the seeded default password (see note above).
+  await db
+    .update(adminSettings)
+    .set({ value: ROTATED_PASSWORD_HASH })
+    .where(eq(adminSettings.key, "admin_password_hash"));
 }
 
 export async function seedService(overrides: Partial<typeof services.$inferInsert> = {}) {
