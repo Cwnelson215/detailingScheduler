@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Calendar, ClipboardList, LayoutDashboard, MessageSquare, Settings, Wrench } from "lucide-react";
+import { Calendar, CalendarDays, ClipboardList, LayoutDashboard, MessageSquare, Settings, Wrench } from "lucide-react";
 import { ChangePasswordForm } from "@/components/admin/change-password-form";
 import { isUsingDefaultAdminPassword } from "@/lib/admin-password";
 
@@ -39,6 +39,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </NavLink>
           <NavLink href="/admin/bookings" icon={<ClipboardList className="h-4 w-4" />}>
             Bookings
+          </NavLink>
+          <NavLink href="/admin/calendar" icon={<CalendarDays className="h-4 w-4" />}>
+            Calendar
           </NavLink>
           <NavLink href="/admin/messages" icon={<MessageSquare className="h-4 w-4" />}>
             Messages
