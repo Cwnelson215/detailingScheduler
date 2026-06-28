@@ -84,9 +84,22 @@ spec:
             failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 1001
             runAsGroup: 1001
             capabilities:
               drop: ["ALL"]
+          # Read-only root FS shrinks the blast radius of a compromise; mount tmpfs at the
+          # only paths the Next.js standalone server writes at runtime (temp files + the
+          # ISR/image-optimization cache under the working dir).
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
