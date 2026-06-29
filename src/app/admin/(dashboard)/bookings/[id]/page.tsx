@@ -31,7 +31,10 @@ export default async function AdminBookingDetailPage({
       id: bookings.id,
       serviceId: bookings.serviceId,
       serviceName: services.name,
-      priceCents: services.priceCents,
+      basePriceCents: bookings.basePriceCents,
+      finalPriceCents: bookings.finalPriceCents,
+      discountPercent: bookings.discountPercent,
+      sameDayDiscount: bookings.sameDayDiscount,
       durationMins: services.durationMins,
       customerName: bookings.customerName,
       customerEmail: bookings.customerEmail,
@@ -52,6 +55,12 @@ export default async function AdminBookingDetailPage({
 
   if (result.length === 0) redirect("/admin/bookings");
   const booking = result[0];
+  const basePrice = booking.basePriceCents ?? 0;
+  const finalPrice = booking.finalPriceCents ?? basePrice;
+  const discounted = booking.discountPercent > 0 && basePrice !== finalPrice;
+  const discountLabel = booking.sameDayDiscount
+    ? `Same-day (${booking.discountPercent}%)`
+    : `Discount (${booking.discountPercent}%)`;
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -99,10 +108,27 @@ export default async function AdminBookingDetailPage({
               <span className="text-muted-foreground">Duration</span>
               <span className="font-medium">{formatDuration(booking.durationMins)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Price</span>
-              <span className="font-medium">{formatCurrency(booking.priceCents)}</span>
-            </div>
+            {discounted ? (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="font-medium">{formatCurrency(basePrice)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{discountLabel}</span>
+                  <span className="font-medium text-green-700">−{formatCurrency(basePrice - finalPrice)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="font-medium">{formatCurrency(finalPrice)}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Price</span>
+                <span className="font-medium">{formatCurrency(finalPrice)}</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 

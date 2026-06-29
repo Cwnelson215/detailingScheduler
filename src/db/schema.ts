@@ -100,6 +100,21 @@ export const bookings = pgTable(
     dropoffWindow: varchar("dropoff_window", { length: 10 }).notNull().$type<"morning" | "evening">(),
     status: varchar("status", { length: 20 }).notNull().default("pending"),
     notes: text("notes").default(""),
+    // Price snapshot + discount. basePriceCents is the service price captured at booking time
+    // (so a later service-price edit never rewrites historical totals); finalPriceCents is the
+    // amount after discount and is the money source of truth. Typed nullable so the additive
+    // migration's pre-backfill window type-checks; the DB enforces NOT NULL once filled.
+    basePriceCents: integer("base_price_cents"),
+    finalPriceCents: integer("final_price_cents"),
+    // Total discount applied (0/10/15/20/25), kept denormalized for display.
+    discountPercent: integer("discount_percent").notNull().default(0),
+    // The promo code consumed at creation (10% "first N"), if any.
+    promoCodeId: integer("promo_code_id"),
+    // The referral token redeemed against this booking (15%), if any. Set from the manage page.
+    referralTokenId: integer("referral_token_id"),
+    // True when this is a same-day repeat booking (auto 20%). Standalone — never combines with
+    // promo/referral; the 20% always wins.
+    sameDayDiscount: boolean("same_day_discount").notNull().default(false),
     // Unguessable handle for customer-facing confirmation/manage links, so those
     // pages never expose a booking by its sequential integer id.
     confirmationToken: varchar("confirmation_token", { length: 64 })
@@ -167,3 +182,60 @@ export const adminSettings = pgTable("admin_settings", {
   key: varchar("key", { length: 255 }).primaryKey(),
   value: text("value").notNull(),
 });
+
+// Admin-managed promo codes. The "first N people get 10%" launch case is a code with
+// percentOff=10 and maxUses=5; usedCount is incremented atomically (guarded conditional
+// UPDATE) at booking time so the cap is race-safe. maxUses null = unlimited.
+export const promoCodes = pgTable(
+  "promo_codes",
+  {
+    id: serial("id").primaryKey(),
+    code: varchar("code", { length: 50 }).notNull(), // stored uppercase/trimmed
+    description: text("description").notNull().default(""),
+    percentOff: integer("percent_off").notNull(),
+    maxUses: integer("max_uses"), // null = unlimited
+    usedCount: integer("used_count").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    expiresAt: date("expires_at"), // null = never
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    codeIdx: uniqueIndex("promo_codes_code_idx").on(t.code),
+  }),
+);
+
+// One personal referral code per customer email, generated on their first booking. Sharing
+// it and having someone else book with it credits the owner a 15% referral token (below).
+export const referralCodes = pgTable(
+  "referral_codes",
+  {
+    id: serial("id").primaryKey(),
+    code: varchar("code", { length: 16 }).notNull(), // generateJobId() alphabet
+    ownerEmail: varchar("owner_email", { length: 255 }).notNull(), // normalized (lowercase)
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    codeIdx: uniqueIndex("referral_codes_code_idx").on(t.code),
+    ownerEmailIdx: uniqueIndex("referral_codes_owner_email_idx").on(t.ownerEmail),
+  }),
+);
+
+// The referral "bank": one 15% token per successful referral, owned by the referrer's email.
+// `available` until the owner redeems it against one of their own not-yet-completed bookings
+// from the manage page, at which point it flips to `applied` and records the booking.
+export const referralTokens = pgTable(
+  "referral_tokens",
+  {
+    id: serial("id").primaryKey(),
+    ownerEmail: varchar("owner_email", { length: 255 }).notNull(), // normalized (lowercase)
+    sourceBookingId: integer("source_booking_id"), // the referee booking that earned it
+    percentOff: integer("percent_off").notNull().default(15),
+    status: varchar("status", { length: 10 }).notNull().default("available").$type<"available" | "applied">(),
+    appliedBookingId: integer("applied_booking_id"),
+    appliedAt: timestamp("applied_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    ownerStatusIdx: index("referral_tokens_owner_status_idx").on(t.ownerEmail, t.status),
+  }),
+);

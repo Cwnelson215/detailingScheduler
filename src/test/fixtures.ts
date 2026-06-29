@@ -3,7 +3,17 @@
 // to the code under test. Call resetDb() in a beforeEach.
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { services, bookings, bookingMessages, availableDates, businessHours, adminSettings } from "@/db/schema";
+import {
+  services,
+  bookings,
+  bookingMessages,
+  availableDates,
+  businessHours,
+  adminSettings,
+  promoCodes,
+  referralCodes,
+  referralTokens,
+} from "@/db/schema";
 import { encryptMessage } from "@/lib/crypto";
 
 // A non-default admin password hash (a valid bcrypt hash of "rotated-test-password").
@@ -22,7 +32,7 @@ export const ROTATED_PASSWORD_HASH =
 // so every date starts unavailable — call markAvailable() to open the dates a test needs.
 export async function resetDb(): Promise<void> {
   await db.execute(
-    sql`TRUNCATE customer_verification_codes, booking_messages, bookings, services, available_dates RESTART IDENTITY CASCADE`,
+    sql`TRUNCATE customer_verification_codes, booking_messages, bookings, services, available_dates, promo_codes, referral_codes, referral_tokens RESTART IDENTITY CASCADE`,
   );
   // Treat the admin as having rotated off the seeded default password (see note above).
   await db
@@ -62,9 +72,34 @@ export async function seedBooking(overrides: BookingOverrides) {
       status: "pending",
       appointmentTime: "07:00",
       dropoffWindow: "morning",
+      basePriceCents: 15000,
+      finalPriceCents: 15000,
       ...overrides,
     })
     .returning();
+  return row;
+}
+
+export async function seedPromoCode(overrides: Partial<typeof promoCodes.$inferInsert> = {}) {
+  const [row] = await db
+    .insert(promoCodes)
+    .values({
+      code: "LAUNCH10",
+      percentOff: 10,
+      maxUses: 5,
+      ...overrides,
+    })
+    .returning();
+  return row;
+}
+
+export async function seedReferralCode(ownerEmail: string, code: string) {
+  const [row] = await db.insert(referralCodes).values({ ownerEmail, code }).returning();
+  return row;
+}
+
+export async function seedReferralToken(overrides: Partial<typeof referralTokens.$inferInsert> & { ownerEmail: string }) {
+  const [row] = await db.insert(referralTokens).values(overrides).returning();
   return row;
 }
 

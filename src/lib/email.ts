@@ -16,7 +16,12 @@ type BookingEmailInput = {
   bookingId: number;
   jobId?: string;
   serviceName: string;
+  // The amount actually charged (after any discount). Always render this as the total.
   priceCents: number;
+  // Pre-discount price + the percent off. When a discount applied, the email shows a
+  // Subtotal / Discount / Total breakdown instead of a single Price line.
+  basePriceCents?: number;
+  discountPercent?: number;
   durationMins: number;
   customerName: string;
   customerEmail: string;
@@ -28,6 +33,9 @@ type BookingEmailInput = {
   appointmentTime: string;
   dropoffWindow: DropoffWindow;
   manageUrl?: string;
+  // The customer's own personal referral code, shown on the confirmation email so they can
+  // share it (only set for the booking-confirmation send).
+  referralCode?: string;
 };
 
 function siteUrl(): string {
@@ -89,15 +97,49 @@ function locationText(address: string): string {
   return `Drop-off location:\n${address}`;
 }
 
+function priceRows(b: BookingEmailInput): [string, string][] {
+  const discounted =
+    !!b.discountPercent &&
+    b.discountPercent > 0 &&
+    b.basePriceCents != null &&
+    b.basePriceCents !== b.priceCents;
+  if (!discounted) return [["Price", formatCurrency(b.priceCents)]];
+  return [
+    ["Subtotal", formatCurrency(b.basePriceCents!)],
+    [`Discount (${b.discountPercent}%)`, `−${formatCurrency(b.basePriceCents! - b.priceCents)}`],
+    ["Total", formatCurrency(b.priceCents)],
+  ];
+}
+
 function bookingRows(b: BookingEmailInput): [string, string][] {
   return [
     ["Booking #", String(b.bookingId)],
     ...(b.jobId ? ([["Job ID", b.jobId]] as [string, string][]) : []),
     ["Service", b.serviceName],
-    ["Price", formatCurrency(b.priceCents)],
+    ...priceRows(b),
     ["Date", formatDate(b.appointmentDate)],
     ["Drop-off", dropoffSummary(b.dropoffWindow, b.appointmentTime)],
     ["Vehicle", `${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`],
+  ];
+}
+
+// The "share your code for 15%" block on the confirmation email. Empty when no code.
+function referralHtml(b: BookingEmailInput): string {
+  if (!b.referralCode) return "";
+  return `<div style="margin-top:24px;padding:16px;background:#f6f8fa;border-radius:6px;">
+    <div style="font-weight:600;margin-bottom:4px;">Refer a friend, get 15% off</div>
+    <div style="color:#555;">Share your personal code — when a friend books with it, you earn a 15% discount you can apply to any upcoming booking from your manage page.</div>
+    <div style="font-size:20px;font-weight:700;letter-spacing:2px;margin-top:8px;">${escapeHtml(b.referralCode)}</div>
+  </div>`;
+}
+
+function referralText(b: BookingEmailInput): string[] {
+  if (!b.referralCode) return [];
+  return [
+    `Refer a friend, get 15% off`,
+    `Share your personal code: ${b.referralCode}`,
+    `When a friend books with it, you earn a 15% discount to apply to any upcoming booking.`,
+    ``,
   ];
 }
 
@@ -108,6 +150,7 @@ function renderHtml(b: BookingEmailInput, address: string): string {
   <p style="color:#555;margin-top:0;">Thanks ${escapeHtml(b.customerName)} — your appointment is on the books.</p>
   ${tableHtml(bookingRows(b))}
   ${locationHtml(address)}
+  ${referralHtml(b)}
   ${b.manageUrl ? `<p style="color:#555;margin-top:24px;">Need to make a change? <a href="${b.manageUrl}">Manage your booking</a>.</p>` : ""}
   ${b.jobId ? `<p style="color:#555;margin-top:8px;">Look up your booking anytime with this email at <a href="${siteUrl()}/lookup">${siteUrl()}/lookup</a>. To reschedule, cancel, or message us, you'll enter your Job ID <strong>${escapeHtml(b.jobId)}</strong> and a code we email you — so keep this Job ID handy.</p>` : ""}
   <p style="color:#555;margin-top:24px;">We'll reach out at ${escapeHtml(b.customerPhone)} if anything changes. Reply to this email with questions.</p>
@@ -122,12 +165,13 @@ function renderText(b: BookingEmailInput, address: string): string {
     ``,
     `Booking #: ${b.bookingId}`,
     `Service:   ${b.serviceName}`,
-    `Price:     ${formatCurrency(b.priceCents)}`,
+    ...priceRows(b).map(([k, v]) => `${k}: ${v}`),
     `Date:      ${formatDate(b.appointmentDate)}`,
     `Drop-off:  ${dropoffSummary(b.dropoffWindow, b.appointmentTime)}`,
     `Vehicle:   ${b.vehicleYear} ${b.vehicleMake} ${b.vehicleModel}`,
     ``,
     ...(locationText(address) ? [locationText(address), ``] : []),
+    ...referralText(b),
     ...(b.manageUrl ? [`Manage your booking: ${b.manageUrl}`, ``] : []),
     ...(b.jobId
       ? [
@@ -162,7 +206,7 @@ function renderOwnerText(b: BookingEmailInput): string {
     ``,
     `Booking #: ${b.bookingId}`,
     `Service:   ${b.serviceName}`,
-    `Price:     ${formatCurrency(b.priceCents)}`,
+    ...priceRows(b).map(([k, v]) => `${k}: ${v}`),
     `Date:      ${formatDate(b.appointmentDate)}`,
     `Drop-off:  ${dropoffSummary(b.dropoffWindow, b.appointmentTime)}`,
     `Duration:  ${formatDuration(b.durationMins)}`,
@@ -559,6 +603,10 @@ type StatusNotifyBooking = {
   id: number;
   jobId?: string | null;
   serviceId: number;
+  // Price is read from the booking snapshot (captures any discount), not live from services.
+  basePriceCents?: number | null;
+  finalPriceCents?: number | null;
+  discountPercent?: number | null;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -585,12 +633,19 @@ export async function notifyBookingStatus(
       .where(eq(services.id, booking.serviceId));
     if (!service) return;
 
+    // Prefer the booking's snapshotted price (post-discount); fall back to the live service
+    // price for any legacy row that predates the snapshot columns.
+    const finalPriceCents = booking.finalPriceCents ?? service.priceCents;
+    const basePriceCents = booking.basePriceCents ?? service.priceCents;
+
     await sendBookingStatusUpdate(
       {
         bookingId: booking.id,
         jobId: booking.jobId ?? undefined,
         serviceName: service.name,
-        priceCents: service.priceCents,
+        priceCents: finalPriceCents,
+        basePriceCents,
+        discountPercent: booking.discountPercent ?? 0,
         durationMins: service.durationMins,
         customerName: booking.customerName,
         customerEmail: booking.customerEmail,

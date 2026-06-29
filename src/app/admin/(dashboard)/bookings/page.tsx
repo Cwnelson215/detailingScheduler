@@ -30,7 +30,8 @@ export default async function AdminBookingsPage({
     .select({
       id: bookings.id,
       serviceName: services.name,
-      priceCents: services.priceCents,
+      priceCents: bookings.finalPriceCents,
+      discountPercent: bookings.discountPercent,
       customerName: bookings.customerName,
       customerEmail: bookings.customerEmail,
       customerPhone: bookings.customerPhone,
@@ -118,7 +119,12 @@ export default async function AdminBookingsPage({
                     <TableCell>
                       <Badge variant={statusColors[b.status]}>{b.status}</Badge>
                     </TableCell>
-                    <TableCell className="text-right">{formatCurrency(b.priceCents)}</TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(b.priceCents ?? 0)}
+                      {b.discountPercent > 0 && (
+                        <span className="ml-1 text-xs text-green-700">−{b.discountPercent}%</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       <MarkReadyButton bookingId={b.id} currentStatus={b.status} />
                     </TableCell>

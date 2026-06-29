@@ -3,14 +3,15 @@ export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
 import { db } from "@/db";
-import { bookings } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { bookings, referralTokens } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 import { customerManageSchema } from "@/lib/validations";
 import { isWindowAvailable } from "@/lib/availability";
 import { notifyBookingStatus } from "@/lib/email";
 import { normalizeJobId } from "@/lib/job-id";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
-import { requireCustomerBooking } from "@/lib/customer-session";
+import { requireCustomerBooking, normalizeEmail } from "@/lib/customer-session";
+import { effectiveDiscountPercent, finalCents, REFERRAL_PERCENT } from "@/lib/pricing";
 
 type Booking = typeof bookings.$inferSelect;
 
@@ -39,7 +40,96 @@ export async function POST(
   if (!parsed.success) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { cancel, appointmentDate, dropoffWindow, ...contact } = parsed.data;
+  const { cancel, appointmentDate, dropoffWindow, applyReferralToken, removeReferralToken, ...contact } =
+    parsed.data;
+
+  // --- Apply a referral token (15%) from the customer's bank to this booking ---
+  if (applyReferralToken) {
+    if (existing.status === "cancelled" || existing.status === "completed") {
+      return Response.json({ error: "This booking can no longer be changed." }, { status: 409 });
+    }
+    if (existing.sameDayDiscount) {
+      return Response.json(
+        { error: "This booking has the same-day discount, which can't be combined with a referral." },
+        { status: 409 },
+      );
+    }
+    if (existing.referralTokenId) {
+      return Response.json(
+        { error: "A referral discount is already applied to this booking." },
+        { status: 409 },
+      );
+    }
+    const ownerEmail = normalizeEmail(existing.customerEmail);
+    const updated = await db.transaction(async (tx) => {
+      // Lock one available token so two concurrent applies can't claim the same credit.
+      const [token] = await tx
+        .select({ id: referralTokens.id })
+        .from(referralTokens)
+        .where(and(eq(referralTokens.ownerEmail, ownerEmail), eq(referralTokens.status, "available")))
+        .limit(1)
+        .for("update");
+      if (!token) return null;
+
+      const base = existing.basePriceCents ?? 0;
+      const discountPercent = effectiveDiscountPercent({
+        sameDay: false,
+        promoPercent: existing.discountPercent, // whatever promo was already on the booking
+        referralPercent: REFERRAL_PERCENT,
+      });
+      await tx
+        .update(referralTokens)
+        .set({ status: "applied", appliedBookingId: existing.id, appliedAt: new Date() })
+        .where(eq(referralTokens.id, token.id));
+      const [row] = await tx
+        .update(bookings)
+        .set({
+          referralTokenId: token.id,
+          discountPercent,
+          finalPriceCents: finalCents(base, discountPercent),
+        })
+        .where(eq(bookings.id, existing.id))
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      return Response.json({ error: "No referral credit available." }, { status: 409 });
+    }
+    return Response.json(updated);
+  }
+
+  // --- Remove a previously-applied referral token (return it to the bank) ---
+  if (removeReferralToken) {
+    if (!existing.referralTokenId) {
+      return Response.json({ error: "No referral discount is applied." }, { status: 409 });
+    }
+    if (existing.status === "completed") {
+      return Response.json({ error: "This booking can no longer be changed." }, { status: 409 });
+    }
+    const tokenId = existing.referralTokenId;
+    const base = existing.basePriceCents ?? 0;
+    const discountPercent = effectiveDiscountPercent({
+      sameDay: false,
+      promoPercent: existing.discountPercent - REFERRAL_PERCENT,
+    });
+    const updated = await db.transaction(async (tx) => {
+      await tx
+        .update(referralTokens)
+        .set({ status: "available", appliedBookingId: null, appliedAt: null })
+        .where(eq(referralTokens.id, tokenId));
+      const [row] = await tx
+        .update(bookings)
+        .set({
+          referralTokenId: null,
+          discountPercent,
+          finalPriceCents: finalCents(base, discountPercent),
+        })
+        .where(eq(bookings.id, existing.id))
+        .returning();
+      return row;
+    });
+    return Response.json(updated);
+  }
 
   // --- Cancel ---
   if (cancel) {

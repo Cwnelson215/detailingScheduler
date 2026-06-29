@@ -20,6 +20,11 @@ type BookingDetails = {
   vehicleYear: string;
   vehicleMake: string;
   vehicleModel: string;
+  // Referral bank context for the manage tier.
+  referralCode: string;
+  availableTokens: number;
+  referralApplied: boolean;
+  sameDayDiscount: boolean;
 };
 
 type Step = "locked" | "jobId" | "code" | "unlocked";

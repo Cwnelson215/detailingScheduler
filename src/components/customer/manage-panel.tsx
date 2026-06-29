@@ -23,6 +23,10 @@ type BookingView = {
   vehicleYear: string;
   vehicleMake: string;
   vehicleModel: string;
+  referralCode: string;
+  availableTokens: number;
+  referralApplied: boolean;
+  sameDayDiscount: boolean;
 };
 
 type Mode = "none" | "reschedule" | "edit";
@@ -70,6 +74,8 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
 
   return (
     <div className="space-y-4">
+      <ReferralSection booking={booking} busy={busy} post={post} />
+
       {mode === "none" && (
         <div className="flex flex-wrap gap-3">
           <Button variant="outline" onClick={() => setMode("reschedule")}>
@@ -131,6 +137,78 @@ export function ManagePanel({ booking }: { booking: BookingView }) {
       )}
 
       {dialog}
+    </div>
+  );
+}
+
+function ReferralSection({
+  booking,
+  busy,
+  post,
+}: {
+  booking: BookingView;
+  busy: boolean;
+  post: (payload: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const { referralCode, availableTokens, referralApplied, sameDayDiscount } = booking;
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border bg-secondary/30 p-4">
+      <div>
+        <p className="text-sm font-semibold text-foreground">Refer a friend, get 15%</p>
+        {referralCode ? (
+          <p className="text-sm text-muted-foreground">
+            Share your code{" "}
+            <span className="font-mono font-semibold tracking-wide text-foreground">
+              {referralCode}
+            </span>
+            . When a friend books with it, you earn a 15% credit.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            You&apos;ll get a personal referral code to share after your first booking.
+          </p>
+        )}
+      </div>
+
+      {referralApplied ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm font-medium text-green-700">15% referral discount applied.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={async () => {
+              if (await post({ removeReferralToken: true })) toast.success("Referral discount removed.");
+            }}
+          >
+            Remove
+          </Button>
+        </div>
+      ) : sameDayDiscount ? (
+        <p className="text-sm text-muted-foreground">
+          This booking already has the same-day 20% discount, which can&apos;t be combined with a
+          referral credit.
+        </p>
+      ) : availableTokens > 0 ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            You have {availableTokens} referral {availableTokens === 1 ? "credit" : "credits"}.
+          </p>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={async () => {
+              if (await post({ applyReferralToken: true }))
+                toast.success("15% referral discount applied.");
+            }}
+          >
+            Apply 15% to this booking
+          </Button>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No referral credits to apply yet.</p>
+      )}
     </div>
   );
 }

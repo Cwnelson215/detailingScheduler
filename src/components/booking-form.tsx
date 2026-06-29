@@ -42,6 +42,9 @@ export function BookingForm({ services }: { services: Service[] }) {
     vehicleModel: "",
     notes: "",
   });
+  // A single optional discount / referral code. The server auto-detects: a matching promo code
+  // discounts this booking; a friend's referral code credits the friend instead.
+  const [code, setCode] = useState("");
 
   useEffect(() => {
     if (selectedDate) {
@@ -84,6 +87,9 @@ export function BookingForm({ services }: { services: Service[] }) {
           appointmentDate: selectedDate,
           dropoffWindow: selectedWindow,
           ...form,
+          // Send the one code as both — only the matching kind takes effect server-side.
+          promoCode: code.trim() || undefined,
+          referralCode: code.trim() || undefined,
         }),
       });
 
@@ -325,6 +331,20 @@ export function BookingForm({ services }: { services: Service[] }) {
               )}
             </CardContent>
           </Card>
+          <div className="grid gap-2">
+            <Label htmlFor="code">Discount or referral code (optional)</Label>
+            <Input
+              id="code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="Enter a code"
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              Have a promo code, or a friend&apos;s referral code? Enter it here. Your final total
+              shows on the confirmation page.
+            </p>
+          </div>
           <p className="text-sm text-muted-foreground">
             * Final pricing may vary depending on the condition of your vehicle.
             Especially dirty or heavily soiled vehicles may incur an additional charge.

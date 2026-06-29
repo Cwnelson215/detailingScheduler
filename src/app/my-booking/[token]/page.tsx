@@ -2,8 +2,8 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { bookings, services } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { bookings, services, referralCodes, referralTokens } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
@@ -34,7 +34,11 @@ export default async function CustomerBookingViewPage({
       id: bookings.id,
       serviceId: bookings.serviceId,
       serviceName: services.name,
-      priceCents: services.priceCents,
+      basePriceCents: bookings.basePriceCents,
+      finalPriceCents: bookings.finalPriceCents,
+      discountPercent: bookings.discountPercent,
+      sameDayDiscount: bookings.sameDayDiscount,
+      referralTokenId: bookings.referralTokenId,
       durationMins: services.durationMins,
       appointmentDate: bookings.appointmentDate,
       appointmentTime: bookings.appointmentTime,
@@ -67,6 +71,21 @@ export default async function CustomerBookingViewPage({
   const initial = (info.name.trim()[0] ?? "N").toUpperCase();
   const apptTime = booking.appointmentTime.slice(0, 5);
 
+  // Referral bank: the customer's own shareable code + how many 15% credits they have to spend.
+  const ownerEmail = normalizeEmail(booking.customerEmail);
+  const [refCodeRow] = await db
+    .select({ code: referralCodes.code })
+    .from(referralCodes)
+    .where(eq(referralCodes.ownerEmail, ownerEmail));
+  const availTokens = await db
+    .select({ id: referralTokens.id })
+    .from(referralTokens)
+    .where(and(eq(referralTokens.ownerEmail, ownerEmail), eq(referralTokens.status, "available")));
+
+  const basePrice = booking.basePriceCents ?? 0;
+  const finalPrice = booking.finalPriceCents ?? basePrice;
+  const discounted = booking.discountPercent > 0 && basePrice !== finalPrice;
+
   return (
     <div className="flex min-h-screen flex-col bg-secondary/40">
       <header className="sticky top-0 z-30 border-b border-border bg-white/80 backdrop-blur">
@@ -94,7 +113,18 @@ export default async function CustomerBookingViewPage({
           <Card>
             <CardContent className="space-y-3 p-6 text-left">
               <Row label="Service" value={booking.serviceName} />
-              <Row label="Price" value={formatCurrency(booking.priceCents)} />
+              {discounted ? (
+                <>
+                  <Row label="Subtotal" value={formatCurrency(basePrice)} />
+                  <Row
+                    label={`Discount (${booking.discountPercent}%)`}
+                    value={`−${formatCurrency(basePrice - finalPrice)}`}
+                  />
+                  <Row label="Total" value={formatCurrency(finalPrice)} />
+                </>
+              ) : (
+                <Row label="Price" value={formatCurrency(finalPrice)} />
+              )}
               <Row
                 label="Date"
                 value={new Date(booking.appointmentDate + "T00:00:00").toLocaleDateString("en-US", {
@@ -125,6 +155,10 @@ export default async function CustomerBookingViewPage({
               vehicleYear: booking.vehicleYear,
               vehicleMake: booking.vehicleMake,
               vehicleModel: booking.vehicleModel,
+              referralCode: refCodeRow?.code ?? "",
+              availableTokens: availTokens.length,
+              referralApplied: booking.referralTokenId != null,
+              sameDayDiscount: booking.sameDayDiscount,
             }}
             deviceTrusted={deviceTrusted}
           />

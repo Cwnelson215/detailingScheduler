@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { db } from "@/db";
-import { bookings, services } from "@/db/schema";
+import { bookings, services, referralCodes } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { normalizeEmail } from "@/lib/customer-session";
 import { redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,9 @@ export default async function ConfirmationPage({
       id: bookings.id,
       jobId: bookings.jobId,
       serviceName: services.name,
-      priceCents: services.priceCents,
+      basePriceCents: bookings.basePriceCents,
+      finalPriceCents: bookings.finalPriceCents,
+      discountPercent: bookings.discountPercent,
       durationMins: services.durationMins,
       customerName: bookings.customerName,
       customerEmail: bookings.customerEmail,
@@ -47,6 +50,15 @@ export default async function ConfirmationPage({
   const booking = result[0];
   const info = await getBusinessInfo();
   const initial = (info.name.trim()[0] ?? "N").toUpperCase();
+
+  const basePrice = booking.basePriceCents ?? 0;
+  const finalPrice = booking.finalPriceCents ?? basePrice;
+  const discounted = booking.discountPercent > 0 && basePrice !== finalPrice;
+
+  const [refCodeRow] = await db
+    .select({ code: referralCodes.code })
+    .from(referralCodes)
+    .where(eq(referralCodes.ownerEmail, normalizeEmail(booking.customerEmail)));
 
   return (
     <div className="flex min-h-screen flex-col bg-secondary/40">
@@ -87,10 +99,27 @@ export default async function ConfirmationPage({
                 <span className="text-muted-foreground">Service</span>
                 <span className="font-medium">{booking.serviceName}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Price</span>
-                <span className="font-medium">{formatCurrency(booking.priceCents)}<span className="text-muted-foreground">*</span></span>
-              </div>
+              {discounted ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="font-medium">{formatCurrency(basePrice)}<span className="text-muted-foreground">*</span></span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Discount ({booking.discountPercent}%)</span>
+                    <span className="font-medium text-green-700">−{formatCurrency(basePrice - finalPrice)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total</span>
+                    <span className="font-medium">{formatCurrency(finalPrice)}<span className="text-muted-foreground">*</span></span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Price</span>
+                  <span className="font-medium">{formatCurrency(finalPrice)}<span className="text-muted-foreground">*</span></span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Date</span>
                 <span className="font-medium">
@@ -124,6 +153,21 @@ export default async function ConfirmationPage({
             * Final pricing may vary depending on the condition of your vehicle.
             Especially dirty or heavily soiled vehicles may incur an additional charge.
           </p>
+
+          {refCodeRow?.code && (
+            <Card className="mt-6 text-left">
+              <CardContent className="p-6">
+                <p className="font-semibold text-foreground">Refer a friend, get 15% off</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Share your personal code below. When a friend books with it, you earn a 15%
+                  discount you can apply to any upcoming booking from your manage page.
+                </p>
+                <p className="mt-3 font-mono text-xl font-bold tracking-wide text-foreground">
+                  {refCodeRow.code}
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           <p className="mx-auto mt-4 max-w-md text-sm text-muted-foreground">
             Want to reschedule, cancel, or message us? Use{" "}

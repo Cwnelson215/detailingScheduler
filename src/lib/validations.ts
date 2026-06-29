@@ -49,6 +49,16 @@ export const dropoffWindowField = z.enum(["morning", "evening"]);
 
 export const bookingStatusValues = ["pending", "confirmed", "ready", "completed", "cancelled"] as const;
 
+// An optional discount/referral code typed by a customer. Trimmed + uppercased; a blank
+// string (the form's empty default) becomes undefined so it's treated as "no code".
+const optionalCodeField = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .max(50)
+  .optional()
+  .transform((v) => (v ? v : undefined));
+
 export const bookingSchema = z.object({
   serviceId: z.number().int().positive(),
   customerName: z.string().min(1, "Name is required").max(255),
@@ -60,6 +70,12 @@ export const bookingSchema = z.object({
   appointmentDate: appointmentDateField,
   dropoffWindow: dropoffWindowField,
   notes: z.string().max(1000).optional().default(""),
+  // Optional codes entered at booking. promoCode discounts THIS booking (e.g. the 10%
+  // "first N"); referralCode is a friend's personal code and credits THE FRIEND (the enterer
+  // gets nothing). One UI field posts whichever the customer typed; the server auto-detects.
+  // Blank strings from the form collapse to undefined.
+  promoCode: optionalCodeField,
+  referralCode: optionalCodeField,
 });
 
 // Admin-only updates to an existing booking (status change, reschedule, notes edit).
@@ -98,6 +114,9 @@ export const customerManageSchema = z
     vehicleMake: z.string().min(1, "Make is required").max(100).optional(),
     vehicleModel: z.string().min(1, "Model is required").max(100).optional(),
     cancel: z.literal(true).optional(),
+    // Redeem / un-redeem a 15% referral token (from the customer's bank) against this booking.
+    applyReferralToken: z.literal(true).optional(),
+    removeReferralToken: z.literal(true).optional(),
   })
   .refine((d) => Object.keys(d).length > 0, "No fields to update");
 
@@ -131,6 +150,37 @@ export const serviceUpdateSchema = z
     priceCents: z.number().int().min(0),
     isActive: z.boolean(),
     sortOrder: z.number().int(),
+  })
+  .partial()
+  .refine((d) => Object.keys(d).length > 0, "No valid fields to update");
+
+// Admin-managed promo code. The launch case ("first 5 get 10%") is percentOff=10, maxUses=5.
+// maxUses null = unlimited; expiresAt null = never. Code is trimmed + uppercased for a
+// case-insensitive match at redemption.
+const promoExpiresField = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format")
+  .refine(isRealCalendarDate, "Not a real calendar date")
+  .nullable()
+  .optional();
+
+export const promoCodeSchema = z.object({
+  code: z.string().trim().toUpperCase().min(1, "Code is required").max(50),
+  description: z.string().max(500).default(""),
+  percentOff: z.number().int().min(1, "Must be at least 1%").max(100, "Cannot exceed 100%"),
+  maxUses: z.number().int().min(1, "Must allow at least 1 use").nullable().optional(),
+  expiresAt: promoExpiresField,
+  isActive: z.boolean().default(true),
+});
+
+export const promoCodeUpdateSchema = z
+  .object({
+    code: z.string().trim().toUpperCase().min(1, "Code is required").max(50),
+    description: z.string().max(500),
+    percentOff: z.number().int().min(1).max(100),
+    maxUses: z.number().int().min(1).nullable(),
+    expiresAt: promoExpiresField,
+    isActive: z.boolean(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, "No valid fields to update");
@@ -211,3 +261,4 @@ export type BookingInput = z.infer<typeof bookingSchema>;
 export type ContactInput = z.infer<typeof contactSchema>;
 export type ServiceInput = z.infer<typeof serviceSchema>;
 export type BusinessInfoInput = z.infer<typeof businessInfoSchema>;
+export type PromoCodeInput = z.infer<typeof promoCodeSchema>;

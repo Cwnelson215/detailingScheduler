@@ -2,14 +2,16 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
 import { db } from "@/db";
-import { bookings, services } from "@/db/schema";
-import { desc, eq, sql } from "drizzle-orm";
+import { bookings, services, promoCodes, referralCodes, referralTokens } from "@/db/schema";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { bookingSchema } from "@/lib/validations";
 import { requireAdmin } from "@/lib/require-admin";
 import { isWindowAvailable } from "@/lib/availability";
 import { sendBookingConfirmation, sendOwnerNotification } from "@/lib/email";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
-import { addTrustedBooking } from "@/lib/customer-session";
+import { addTrustedBooking, normalizeEmail } from "@/lib/customer-session";
+import { effectiveDiscountPercent, finalCents } from "@/lib/pricing";
+import { generateJobId, normalizeJobId } from "@/lib/job-id";
 import { logger } from "@/lib/logger";
 
 export async function GET() {
@@ -52,6 +54,10 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  // promoCode/referralCode are not booking columns — split them out before the insert.
+  const { promoCode, referralCode, ...bookingData } = parsed.data;
+  const bookerEmail = normalizeEmail(bookingData.customerEmail);
+
   // Re-verify the window is free and insert atomically. A per-day advisory lock serializes
   // concurrent booking attempts for the same date so two requests can't both pass the
   // check-then-insert window and double-book a window. The window's start time is resolved
@@ -59,23 +65,133 @@ export async function POST(request: NextRequest) {
   // The unique job_id is generated per insert ($defaultFn); on the astronomically rare
   // collision (23505 on bookings_job_id_idx) we retry, which regenerates it. A 23505 on the
   // (date, window) index means the window was just taken by a concurrent request => 409.
+  // Discount resolution (same-day check, promo consume, referral credit) all happens inside
+  // this same transaction so a retry/conflict rolls it back — no phantom promo consumption.
   let booking: typeof bookings.$inferSelect | null = null;
+  let ownReferralCode: string | undefined;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      booking = await db.transaction(async (tx) => {
-        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${parsed.data.appointmentDate}))`);
+      const result = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${bookingData.appointmentDate}))`);
         const { ok, startTime } = await isWindowAvailable(
           tx,
-          parsed.data.appointmentDate,
-          parsed.data.dropoffWindow,
+          bookingData.appointmentDate,
+          bookingData.dropoffWindow,
         );
         if (!ok || !startTime) return null;
+
+        const [service] = await tx
+          .select({ priceCents: services.priceCents })
+          .from(services)
+          .where(eq(services.id, bookingData.serviceId));
+        const basePriceCents = service?.priceCents ?? 0;
+
+        // Same-day repeat: any earlier non-cancelled booking under this email made today (by
+        // created_at) makes this an automatic 20% booking. The 20% is standalone and always
+        // wins, so when it applies we don't even consume a promo code.
+        const priorToday = await tx
+          .select({ id: bookings.id })
+          .from(bookings)
+          .where(
+            sql`lower(${bookings.customerEmail}) = ${bookerEmail} AND ${bookings.status} != 'cancelled' AND ${bookings.createdAt}::date = current_date`,
+          )
+          .limit(1);
+        const sameDay = priorToday.length > 0;
+
+        // Promo (only when not a same-day booking). Guarded conditional UPDATE makes the
+        // "first N uses" cap race-safe: only a row that's still active, under its cap, and
+        // unexpired increments and returns — otherwise no discount, booking still proceeds.
+        let promoCodeId: number | null = null;
+        let promoPercent = 0;
+        if (!sameDay && promoCode) {
+          const consumed = await tx
+            .update(promoCodes)
+            .set({ usedCount: sql`${promoCodes.usedCount} + 1` })
+            .where(
+              and(
+                eq(promoCodes.code, promoCode),
+                eq(promoCodes.isActive, true),
+                sql`(${promoCodes.maxUses} IS NULL OR ${promoCodes.usedCount} < ${promoCodes.maxUses})`,
+                sql`(${promoCodes.expiresAt} IS NULL OR ${promoCodes.expiresAt} >= current_date)`,
+              ),
+            )
+            .returning({ id: promoCodes.id, percentOff: promoCodes.percentOff });
+          if (consumed[0]) {
+            promoCodeId = consumed[0].id;
+            promoPercent = consumed[0].percentOff;
+          }
+        }
+
+        const discountPercent = effectiveDiscountPercent({ sameDay, promoPercent });
+        const finalPriceCents = finalCents(basePriceCents, discountPercent);
+
         const [row] = await tx
           .insert(bookings)
-          .values({ ...parsed.data, appointmentTime: startTime })
+          .values({
+            ...bookingData,
+            appointmentTime: startTime,
+            basePriceCents,
+            finalPriceCents,
+            discountPercent,
+            promoCodeId,
+            sameDayDiscount: sameDay,
+          })
           .returning();
-        return row;
+
+        // Ensure this booker has a personal referral code to share (idempotent per email).
+        let myCode: string | undefined;
+        const existingRef = await tx
+          .select({ code: referralCodes.code })
+          .from(referralCodes)
+          .where(eq(referralCodes.ownerEmail, bookerEmail))
+          .limit(1);
+        if (existingRef[0]) {
+          myCode = existingRef[0].code;
+        } else {
+          for (let i = 0; i < 5; i++) {
+            const code = generateJobId();
+            const ins = await tx
+              .insert(referralCodes)
+              .values({ code, ownerEmail: bookerEmail })
+              .onConflictDoNothing()
+              .returning({ code: referralCodes.code });
+            if (ins[0]) {
+              myCode = ins[0].code;
+              break;
+            }
+            // Conflict: either the email row was created concurrently, or a rare code
+            // collision — re-read the email's code and stop if it now exists.
+            const re = await tx
+              .select({ code: referralCodes.code })
+              .from(referralCodes)
+              .where(eq(referralCodes.ownerEmail, bookerEmail))
+              .limit(1);
+            if (re[0]) {
+              myCode = re[0].code;
+              break;
+            }
+          }
+        }
+
+        // Credit the referrer (if a valid friend's code was entered, and it isn't self-referral).
+        if (referralCode) {
+          const refNorm = normalizeJobId(referralCode);
+          const [owner] = await tx
+            .select({ ownerEmail: referralCodes.ownerEmail })
+            .from(referralCodes)
+            .where(eq(referralCodes.code, refNorm))
+            .limit(1);
+          if (owner && owner.ownerEmail !== bookerEmail) {
+            await tx
+              .insert(referralTokens)
+              .values({ ownerEmail: owner.ownerEmail, sourceBookingId: row.id });
+          }
+        }
+
+        return { row, myCode };
       });
+      booking = result?.row ?? null;
+      ownReferralCode = result?.myCode;
       break;
     } catch (err) {
       const code = (err as { code?: string })?.code;
@@ -95,7 +211,7 @@ export async function POST(request: NextRequest) {
   }
 
   const [service] = await db
-    .select({ name: services.name, priceCents: services.priceCents, durationMins: services.durationMins })
+    .select({ name: services.name, durationMins: services.durationMins })
     .from(services)
     .where(eq(services.id, booking.serviceId));
 
@@ -105,7 +221,9 @@ export async function POST(request: NextRequest) {
       bookingId: booking.id,
       jobId: booking.jobId ?? undefined,
       serviceName: service.name,
-      priceCents: service.priceCents,
+      priceCents: booking.finalPriceCents ?? 0,
+      basePriceCents: booking.basePriceCents ?? 0,
+      discountPercent: booking.discountPercent,
       durationMins: service.durationMins,
       customerName: booking.customerName,
       customerEmail: booking.customerEmail,
@@ -122,6 +240,7 @@ export async function POST(request: NextRequest) {
       sendBookingConfirmation({
         ...emailInput,
         manageUrl: `${baseUrl}/my-booking/${booking.confirmationToken}`,
+        referralCode: ownReferralCode,
       }),
       sendOwnerNotification(emailInput),
     ]);

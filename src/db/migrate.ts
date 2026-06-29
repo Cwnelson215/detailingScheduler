@@ -214,6 +214,89 @@ export async function runMigrations() {
     sql`CREATE INDEX IF NOT EXISTS customer_verification_codes_booking_id_idx ON customer_verification_codes (booking_id)`,
   );
 
+  // --- Discounts: price snapshot on bookings + promo/referral tables ---
+
+  // Snapshot price onto each booking. Until now price was read live from services; discounts
+  // require a per-booking record. Add nullable, backfill from the current service price, then
+  // enforce NOT NULL (mirrors the job_id pattern above).
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS base_price_cents INTEGER`);
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS final_price_cents INTEGER`);
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS discount_percent INTEGER NOT NULL DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS promo_code_id INTEGER`);
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS referral_token_id INTEGER`);
+  await db.execute(sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS same_day_discount BOOLEAN NOT NULL DEFAULT false`);
+  await db.execute(sql`
+    UPDATE bookings b SET base_price_cents = s.price_cents, final_price_cents = s.price_cents
+    FROM services s WHERE b.service_id = s.id AND b.base_price_cents IS NULL
+  `);
+  await db.execute(sql`ALTER TABLE bookings ALTER COLUMN base_price_cents SET NOT NULL`);
+  await db.execute(sql`ALTER TABLE bookings ALTER COLUMN final_price_cents SET NOT NULL`);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS promo_codes (
+      id SERIAL PRIMARY KEY,
+      code VARCHAR(50) NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      percent_off INTEGER NOT NULL,
+      max_uses INTEGER,
+      used_count INTEGER NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      expires_at DATE,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS promo_codes_code_idx ON promo_codes (code)`);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS referral_codes (
+      id SERIAL PRIMARY KEY,
+      code VARCHAR(16) NOT NULL,
+      owner_email VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_code_idx ON referral_codes (code)`);
+  await db.execute(
+    sql`CREATE UNIQUE INDEX IF NOT EXISTS referral_codes_owner_email_idx ON referral_codes (owner_email)`,
+  );
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS referral_tokens (
+      id SERIAL PRIMARY KEY,
+      owner_email VARCHAR(255) NOT NULL,
+      source_booking_id INTEGER,
+      percent_off INTEGER NOT NULL DEFAULT 15,
+      status VARCHAR(10) NOT NULL DEFAULT 'available',
+      applied_booking_id INTEGER,
+      applied_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS referral_tokens_owner_status_idx ON referral_tokens (owner_email, status)`,
+  );
+
+  // Backfill a personal referral code for each existing distinct customer email so prior
+  // customers can share immediately. Generate app-side (unique alphabet), dedupe like job_id.
+  const distinctEmails = await db
+    .selectDistinct({ email: sql<string>`lower(${schema.bookings.customerEmail})` })
+    .from(schema.bookings);
+  const existingOwners = await db
+    .select({ ownerEmail: schema.referralCodes.ownerEmail })
+    .from(schema.referralCodes);
+  const ownerSet = new Set(existingOwners.map((r) => r.ownerEmail));
+  const emailsNeedingCode = distinctEmails.map((r) => r.email).filter((e) => !ownerSet.has(e));
+  if (emailsNeedingCode.length > 0) {
+    const existingCodes = await db.select({ code: schema.referralCodes.code }).from(schema.referralCodes);
+    const issued = new Set(existingCodes.map((r) => r.code));
+    for (const email of emailsNeedingCode) {
+      let code = generateJobId();
+      while (issued.has(code)) code = generateJobId();
+      issued.add(code);
+      await db.insert(schema.referralCodes).values({ code, ownerEmail: email }).onConflictDoNothing();
+    }
+  }
+
   // Seed default business hours if empty. Mon–Fri offer both drop-off windows
   // (7–9am morning, 3–5pm evening); Saturday is morning-only; Sunday is closed.
   const existingHours = await db.select().from(schema.businessHours);

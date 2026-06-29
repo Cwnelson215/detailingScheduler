@@ -57,10 +57,10 @@ export default async function AdminDashboardPage() {
       )
     );
 
+  // Revenue uses the booking's snapshotted post-discount price, not the live service price.
   const weeklyRevenue = await db
-    .select({ total: sql<number>`coalesce(sum(${services.priceCents}), 0)::int` })
+    .select({ total: sql<number>`coalesce(sum(${bookings.finalPriceCents}), 0)::int` })
     .from(bookings)
-    .innerJoin(services, eq(bookings.serviceId, services.id))
     .where(
       and(
         gte(bookings.appointmentDate, weekAgo),

@@ -3,8 +3,15 @@ import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { POST } from "./route";
 import { db } from "@/db";
-import { bookings } from "@/db/schema";
-import { resetDb, seedService, seedBooking, markAvailable, futureDateForWeekday } from "@/test/fixtures";
+import { bookings, referralTokens } from "@/db/schema";
+import {
+  resetDb,
+  seedService,
+  seedBooking,
+  seedReferralToken,
+  markAvailable,
+  futureDateForWeekday,
+} from "@/test/fixtures";
 import { rateLimit } from "@/lib/rate-limit";
 import { issueCustomerToken, CUSTOMER_COOKIE } from "@/lib/customer-session";
 
@@ -97,5 +104,59 @@ describe("POST /api/jobs/[jobId]/manage", () => {
       params: Promise.resolve({ jobId: "ZZZZ9999" }),
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/jobs/[jobId]/manage — referral tokens", () => {
+  it("applies a 15% referral token from the customer's bank", async () => {
+    // The seeded booking's email is test@example.com — give that owner a credit.
+    await seedReferralToken({ ownerEmail: "test@example.com" });
+    const res = await POST(req(jobId, { applyReferralToken: true }, token), {
+      params: Promise.resolve({ jobId }),
+    });
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
+    expect(row.discountPercent).toBe(15);
+    expect(row.finalPriceCents).toBe(12750); // 15000 * 0.85
+    expect(row.referralTokenId).not.toBeNull();
+    const [t] = await db.select().from(referralTokens);
+    expect(t.status).toBe("applied");
+    expect(t.appliedBookingId).toBe(bookingId);
+  });
+
+  it("409 when the bank has no available token", async () => {
+    const res = await POST(req(jobId, { applyReferralToken: true }, token), {
+      params: Promise.resolve({ jobId }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("409 applying a referral token to a same-day (20%) booking", async () => {
+    await db
+      .update(bookings)
+      .set({ sameDayDiscount: true, discountPercent: 20, finalPriceCents: 12000 })
+      .where(eq(bookings.id, bookingId));
+    await seedReferralToken({ ownerEmail: "test@example.com" });
+    const res = await POST(req(jobId, { applyReferralToken: true }, token), {
+      params: Promise.resolve({ jobId }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("removes an applied token and returns it to the bank", async () => {
+    await seedReferralToken({ ownerEmail: "test@example.com" });
+    await POST(req(jobId, { applyReferralToken: true }, token), {
+      params: Promise.resolve({ jobId }),
+    });
+    const res = await POST(req(jobId, { removeReferralToken: true }, token), {
+      params: Promise.resolve({ jobId }),
+    });
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
+    expect(row.discountPercent).toBe(0);
+    expect(row.finalPriceCents).toBe(15000);
+    expect(row.referralTokenId).toBeNull();
+    const [t] = await db.select().from(referralTokens);
+    expect(t.status).toBe("available");
   });
 });
