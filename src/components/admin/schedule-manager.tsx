@@ -30,7 +30,17 @@ export function ScheduleManager({
   initialAvailableDates: AvailableDate[];
 }) {
   const router = useRouter();
-  const [hours, setHours] = useState(initialHours);
+  // Postgres `time` values arrive as "HH:MM:SS"; the editor and server both work in "HH:MM".
+  const hhmm = (t: string | null): string | null => (t ? t.slice(0, 5) : t);
+  const [hours, setHours] = useState<BusinessHour[]>(() =>
+    initialHours.map((h) => ({
+      ...h,
+      morningStart: hhmm(h.morningStart),
+      morningEnd: hhmm(h.morningEnd),
+      eveningStart: hhmm(h.eveningStart),
+      eveningEnd: hhmm(h.eveningEnd),
+    })),
+  );
   const [savingHours, setSavingHours] = useState(false);
 
   const updateHour = (

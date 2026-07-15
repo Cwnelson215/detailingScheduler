@@ -187,7 +187,8 @@ export const promoCodeUpdateSchema = z
 
 const windowTimeField = z
   .string()
-  .regex(/^\d{2}:\d{2}$/, "Invalid time format")
+  .regex(/^\d{2}:\d{2}(:\d{2})?$/, "Invalid time format")
+  .transform((t) => t.slice(0, 5)) // normalize Postgres "HH:MM:SS" -> "HH:MM"
   .refine(isRealTimeOfDay, "Not a valid time of day")
   .nullable();
 

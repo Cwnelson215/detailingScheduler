@@ -107,4 +107,30 @@ describe("PUT /api/schedule/available-dates", () => {
     expect(row.morningStart?.slice(0, 5)).toBe("08:30");
     expect(row.eveningEnabled).toBe(false);
   });
+
+  // Regression: the calendar echoes back the row it loaded from the DB, where Postgres `time`
+  // columns serialize as "HH:MM:SS". The schema must accept that and normalize to "HH:MM"
+  // rather than 400 on the trailing seconds (which is what broke the admin editor).
+  it("accepts DB round-tripped 'HH:MM:SS' times and normalizes them to 'HH:MM'", async () => {
+    const monday = futureDateForWeekday(1);
+    await markAvailable(monday);
+    // Read the row back exactly as the admin page would hand it to the client.
+    const [seeded] = await db.select().from(availableDates).where(eq(availableDates.date, monday));
+    expect(seeded.morningStart).toMatch(/^\d{2}:\d{2}:\d{2}$/); // guard: DB really returns seconds
+
+    const res = await PUT(putReq([
+      {
+        date: monday,
+        morningEnabled: seeded.morningEnabled,
+        morningStart: seeded.morningStart,
+        morningEnd: seeded.morningEnd,
+        eveningEnabled: seeded.eveningEnabled,
+        eveningStart: seeded.eveningStart,
+        eveningEnd: seeded.eveningEnd,
+      },
+    ]));
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(availableDates).where(eq(availableDates.date, monday));
+    expect(row.morningStart?.slice(0, 5)).toBe("07:00");
+  });
 });

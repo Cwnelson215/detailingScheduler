@@ -35,14 +35,17 @@ type Windows = Pick<
   "morningEnabled" | "morningStart" | "morningEnd" | "eveningEnabled" | "eveningStart" | "eveningEnd"
 >;
 
+// Postgres `time` values come back as "HH:MM:SS"; the editor and server both work in "HH:MM".
+const hhmm = (t: string | null): string | null => (t ? t.slice(0, 5) : t);
+
 function windowsOf(d: AvailableDate): Windows {
   return {
     morningEnabled: d.morningEnabled,
-    morningStart: d.morningStart,
-    morningEnd: d.morningEnd,
+    morningStart: hhmm(d.morningStart),
+    morningEnd: hhmm(d.morningEnd),
     eveningEnabled: d.eveningEnabled,
-    eveningStart: d.eveningStart,
-    eveningEnd: d.eveningEnd,
+    eveningStart: hhmm(d.eveningStart),
+    eveningEnd: hhmm(d.eveningEnd),
   };
 }
 
